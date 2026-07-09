@@ -1,2 +1,8 @@
 .agents/
 .claude/
+.env
+*.db
+*.db-shm
+*.db-wal
+bin/
+dist/

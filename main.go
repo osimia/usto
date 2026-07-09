@@ -7,7 +7,6 @@ import (
 	"errors"
 	"log"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -19,7 +18,8 @@ import (
 var webFS embed.FS
 
 type App struct {
-	db *sql.DB
+	db  *sql.DB
+	cfg Config
 }
 
 type Category struct {
@@ -76,6 +76,19 @@ type Message struct {
 	CreatedAt string `json:"createdAt"`
 }
 
+type Chat struct {
+	ID          int       `json:"id"`
+	OrderID     int       `json:"orderId"`
+	OrderTitle  string    `json:"orderTitle"`
+	Customer    string    `json:"customer"`
+	Master      string    `json:"master"`
+	LastMessage string    `json:"lastMessage"`
+	LastTime    string    `json:"lastTime"`
+	UnreadCount int       `json:"unreadCount"`
+	Order       *Order    `json:"order,omitempty"`
+	Messages    []Message `json:"messages,omitempty"`
+}
+
 type Transaction struct {
 	ID        int    `json:"id"`
 	Label     string `json:"label"`
@@ -89,10 +102,21 @@ type Profile struct {
 	Name           string `json:"name"`
 	Phone          string `json:"phone"`
 	City           string `json:"city"`
+	District       string `json:"district"`
+	AvatarURL      string `json:"avatarUrl"`
 	WalletBalance  int    `json:"walletBalance"`
 	IsVerified     bool   `json:"isVerified"`
 	CompletedJobs  int    `json:"completedJobs"`
 	PublishedCount int    `json:"publishedCount"`
+}
+
+type User struct {
+	ID        int
+	Phone     string
+	PhoneNorm string
+	Role      string
+	Status    string
+	ProfileID int
 }
 
 type Bootstrap struct {
@@ -106,38 +130,39 @@ type Bootstrap struct {
 	Transactions []Transaction `json:"transactions"`
 }
 
+type ErrorResponse struct {
+	Error APIError `json:"error"`
+}
+
+type APIError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
 func main() {
-	db, err := openDB(env("DB_PATH", "usto.db"))
+	cfg := loadConfig()
+
+	db, err := openDB(cfg)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer db.Close()
 
-	app := &App{db: db}
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/bootstrap", app.bootstrap)
-	mux.HandleFunc("/api/orders", app.orders)
-	mux.HandleFunc("/api/responses", app.responses)
-	mux.HandleFunc("/api/messages", app.messages)
-	mux.HandleFunc("/api/wallet/topup", app.topUpWallet)
-	mux.HandleFunc("/api/verification", app.verifyMaster)
-	mux.HandleFunc("/", staticHandler)
+	app := &App{db: db, cfg: cfg}
+	server := newHTTPServer(cfg, app.routes())
 
-	addr := ":" + env("PORT", "8080")
-	server := &http.Server{
-		Addr:              addr,
-		Handler:           logRequests(mux),
-		ReadHeaderTimeout: 5 * time.Second,
-	}
-
-	log.Printf("USTO started: http://localhost%s", addr)
+	log.Printf("USTO started: %s", cfg.publicURL())
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal(err)
 	}
 }
 
-func openDB(path string) (*sql.DB, error) {
-	db, err := sql.Open("sqlite", path)
+func openDB(cfg Config) (*sql.DB, error) {
+	if cfg.DBDriver != "sqlite" {
+		return nil, errors.New("only sqlite is wired in the current prototype backend")
+	}
+
+	db, err := sql.Open("sqlite", cfg.DBPath)
 	if err != nil {
 		return nil, err
 	}
@@ -150,17 +175,34 @@ func openDB(path string) (*sql.DB, error) {
 	if err := seed(db); err != nil {
 		return nil, err
 	}
+	if err := ensureDemoUsers(db); err != nil {
+		return nil, err
+	}
 	return db, nil
 }
 
 func migrate(db *sql.DB) error {
 	schema := []string{
+		`CREATE TABLE IF NOT EXISTS users (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			phone TEXT NOT NULL,
+			phone_norm TEXT NOT NULL,
+			role TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'active',
+			profile_id INTEGER NOT NULL REFERENCES profiles(id),
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			last_login_at DATETIME
+		);`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_phone_role ON users(phone_norm, role);`,
 		`CREATE TABLE IF NOT EXISTS profiles (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			role TEXT NOT NULL,
 			name TEXT NOT NULL,
 			phone TEXT NOT NULL,
 			city TEXT NOT NULL,
+			district TEXT NOT NULL DEFAULT '',
+			avatar_url TEXT NOT NULL DEFAULT '',
 			wallet_balance INTEGER NOT NULL DEFAULT 0,
 			is_verified INTEGER NOT NULL DEFAULT 0,
 			completed_jobs INTEGER NOT NULL DEFAULT 0
@@ -217,13 +259,56 @@ func migrate(db *sql.DB) error {
 			amount INTEGER NOT NULL,
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		);`,
+		`CREATE TABLE IF NOT EXISTS verification_documents (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			master_profile_id INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+			document_type TEXT NOT NULL,
+			file_url TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'pending',
+			rejection_reason TEXT NOT NULL DEFAULT '',
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			reviewed_at DATETIME
+		);`,
 	}
 	for _, stmt := range schema {
 		if _, err := db.Exec(stmt); err != nil {
 			return err
 		}
 	}
+	if err := ensureColumn(db, "profiles", "district", `ALTER TABLE profiles ADD COLUMN district TEXT NOT NULL DEFAULT ''`); err != nil {
+		return err
+	}
+	if err := ensureColumn(db, "profiles", "avatar_url", `ALTER TABLE profiles ADD COLUMN avatar_url TEXT NOT NULL DEFAULT ''`); err != nil {
+		return err
+	}
 	return nil
+}
+
+func ensureColumn(db *sql.DB, table, column, alterSQL string) error {
+	rows, err := db.Query(`PRAGMA table_info(` + table + `)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var name, dataType string
+		var notNull int
+		var defaultValue any
+		var pk int
+		if err := rows.Scan(&cid, &name, &dataType, &notNull, &defaultValue, &pk); err != nil {
+			return err
+		}
+		if name == column {
+			return nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	_, err = db.Exec(alterSQL)
+	return err
 }
 
 func seed(db *sql.DB) error {
@@ -302,6 +387,29 @@ func seed(db *sql.DB) error {
 	return tx.Commit()
 }
 
+func ensureDemoUsers(db *sql.DB) error {
+	rows, err := db.Query(`SELECT id,role,phone FROM profiles`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var profileID int
+		var role, phone string
+		if err := rows.Scan(&profileID, &role, &phone); err != nil {
+			return err
+		}
+		if _, err := db.Exec(`INSERT INTO users(phone,phone_norm,role,status,profile_id)
+			VALUES(?,?,?,?,?)
+			ON CONFLICT(phone_norm,role) DO UPDATE SET phone=excluded.phone, profile_id=excluded.profile_id, updated_at=CURRENT_TIMESTAMP`,
+			phone, normalizePhone(phone), role, "active", profileID); err != nil {
+			return err
+		}
+	}
+	return rows.Err()
+}
+
 func (a *App) bootstrap(w http.ResponseWriter, r *http.Request) {
 	if !method(w, r, http.MethodGet) {
 		return
@@ -318,130 +426,6 @@ func (a *App) bootstrap(w http.ResponseWriter, r *http.Request) {
 		Messages:     a.messagesForChat(1),
 		Transactions: a.transactions(),
 	})
-}
-
-func (a *App) orders(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		writeJSON(w, a.orders())
-	case http.MethodPost:
-		var req Order
-		if err := decode(r, &req); err != nil {
-			badRequest(w, err)
-			return
-		}
-		if strings.TrimSpace(req.Title) == "" {
-			badRequest(w, errors.New("title is required"))
-			return
-		}
-		res, err := a.db.Exec(`INSERT INTO orders(title,desc,category,district,address,budget,when_label,status,views) VALUES(?,?,?,?,?,?,?,?,0)`,
-			req.Title, req.Desc, req.Category, req.District, req.Address, req.Budget, req.When, "Активная")
-		if err != nil {
-			serverError(w, err)
-			return
-		}
-		id, _ := res.LastInsertId()
-		writeJSON(w, a.orderByID(int(id)))
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-func (a *App) responses(w http.ResponseWriter, r *http.Request) {
-	if !method(w, r, http.MethodPost) {
-		return
-	}
-	var req struct {
-		OrderID int    `json:"orderId"`
-		Price   int    `json:"price"`
-		Comment string `json:"comment"`
-	}
-	if err := decode(r, &req); err != nil {
-		badRequest(w, err)
-		return
-	}
-	if req.OrderID == 0 || req.Price == 0 || strings.TrimSpace(req.Comment) == "" {
-		badRequest(w, errors.New("orderId, price and comment are required"))
-		return
-	}
-	if _, err := a.db.Exec(`INSERT INTO responses(order_id,master_id,price,comment) VALUES(?,?,?,?)`, req.OrderID, 1, req.Price, req.Comment); err != nil {
-		serverError(w, err)
-		return
-	}
-	if _, err := a.db.Exec(`UPDATE profiles SET wallet_balance = wallet_balance - 4 WHERE role='master'`); err != nil {
-		serverError(w, err)
-		return
-	}
-	if _, err := a.db.Exec(`INSERT INTO transactions(label,amount) VALUES(?,?)`, "Отклик на заявку", -4); err != nil {
-		serverError(w, err)
-		return
-	}
-	writeJSON(w, a.snapshot())
-}
-
-func (a *App) messages(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		writeJSON(w, a.messagesForChat(1))
-	case http.MethodPost:
-		var req Message
-		if err := decode(r, &req); err != nil {
-			badRequest(w, err)
-			return
-		}
-		if strings.TrimSpace(req.Text) == "" {
-			badRequest(w, errors.New("message is empty"))
-			return
-		}
-		role := req.FromRole
-		if role == "" {
-			role = "customer"
-		}
-		if _, err := a.db.Exec(`INSERT INTO messages(chat_id,from_role,text) VALUES(1,?,?)`, role, req.Text); err != nil {
-			serverError(w, err)
-			return
-		}
-		writeJSON(w, a.messagesForChat(1))
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-func (a *App) topUpWallet(w http.ResponseWriter, r *http.Request) {
-	if !method(w, r, http.MethodPost) {
-		return
-	}
-	var req struct {
-		Amount int `json:"amount"`
-	}
-	if err := decode(r, &req); err != nil {
-		badRequest(w, err)
-		return
-	}
-	if req.Amount <= 0 {
-		badRequest(w, errors.New("amount must be positive"))
-		return
-	}
-	if _, err := a.db.Exec(`UPDATE profiles SET wallet_balance = wallet_balance + ? WHERE role='master'`, req.Amount); err != nil {
-		serverError(w, err)
-		return
-	}
-	if _, err := a.db.Exec(`INSERT INTO transactions(label,amount) VALUES(?,?)`, "Пополнение кошелька", req.Amount); err != nil {
-		serverError(w, err)
-		return
-	}
-	writeJSON(w, a.snapshot())
-}
-
-func (a *App) verifyMaster(w http.ResponseWriter, r *http.Request) {
-	if !method(w, r, http.MethodPost) {
-		return
-	}
-	if _, err := a.db.Exec(`UPDATE profiles SET is_verified=1 WHERE role='master'`); err != nil {
-		serverError(w, err)
-		return
-	}
-	writeJSON(w, a.snapshot())
 }
 
 func (a *App) snapshot() Bootstrap {
@@ -462,13 +446,28 @@ func (a *App) snapshot() Bootstrap {
 func (a *App) profile(role string) (Profile, error) {
 	var p Profile
 	var verified int
-	err := a.db.QueryRow(`SELECT id,role,name,phone,city,wallet_balance,is_verified,completed_jobs FROM profiles WHERE role=?`, role).
-		Scan(&p.ID, &p.Role, &p.Name, &p.Phone, &p.City, &p.WalletBalance, &verified, &p.CompletedJobs)
+	err := a.db.QueryRow(`SELECT id,role,name,phone,city,district,avatar_url,wallet_balance,is_verified,completed_jobs FROM profiles WHERE role=?`, role).
+		Scan(&p.ID, &p.Role, &p.Name, &p.Phone, &p.City, &p.District, &p.AvatarURL, &p.WalletBalance, &verified, &p.CompletedJobs)
 	if err != nil {
 		return p, err
 	}
 	p.IsVerified = verified == 1
 	if role == "customer" {
+		_ = a.db.QueryRow(`SELECT COUNT(*) FROM orders`).Scan(&p.PublishedCount)
+	}
+	return p, nil
+}
+
+func (a *App) profileByID(id int) (Profile, error) {
+	var p Profile
+	var verified int
+	err := a.db.QueryRow(`SELECT id,role,name,phone,city,district,avatar_url,wallet_balance,is_verified,completed_jobs FROM profiles WHERE id=?`, id).
+		Scan(&p.ID, &p.Role, &p.Name, &p.Phone, &p.City, &p.District, &p.AvatarURL, &p.WalletBalance, &verified, &p.CompletedJobs)
+	if err != nil {
+		return p, err
+	}
+	p.IsVerified = verified == 1
+	if p.Role == "customer" {
 		_ = a.db.QueryRow(`SELECT COUNT(*) FROM orders`).Scan(&p.PublishedCount)
 	}
 	return p, nil
@@ -531,13 +530,13 @@ func (a *App) orders() []Order {
 	return items
 }
 
-func (a *App) orderByID(id int) Order {
+func (a *App) orderByID(id int) (Order, bool) {
 	for _, order := range a.orders() {
 		if order.ID == id {
-			return order
+			return order, true
 		}
 	}
-	return Order{}
+	return Order{}, false
 }
 
 func (a *App) responsesForOrder(orderID int) []Response {
@@ -615,7 +614,7 @@ func decode(r *http.Request, v any) error {
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	if err := json.NewEncoder(w).Encode(v); err != nil {
-		http.Error(w, "json encode failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "json_encode_failed", "json encode failed")
 	}
 }
 
@@ -623,17 +622,28 @@ func method(w http.ResponseWriter, r *http.Request, expected string) bool {
 	if r.Method == expected {
 		return true
 	}
-	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
 	return false
 }
 
 func badRequest(w http.ResponseWriter, err error) {
-	http.Error(w, err.Error(), http.StatusBadRequest)
+	writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 }
 
 func serverError(w http.ResponseWriter, err error) {
 	log.Println("server error:", err)
-	http.Error(w, "server error", http.StatusInternalServerError)
+	writeError(w, http.StatusInternalServerError, "server_error", "server error")
+}
+
+func writeError(w http.ResponseWriter, status int, code, message string) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(ErrorResponse{
+		Error: APIError{
+			Code:    code,
+			Message: message,
+		},
+	})
 }
 
 func logRequests(next http.Handler) http.Handler {
@@ -641,13 +651,6 @@ func logRequests(next http.Handler) http.Handler {
 		log.Printf("%s %s", r.Method, r.URL.Path)
 		next.ServeHTTP(w, r)
 	})
-}
-
-func env(key, fallback string) string {
-	if value := strings.TrimSpace(os.Getenv(key)); value != "" {
-		return value
-	}
-	return fallback
 }
 
 func boolInt(v bool) int {
