@@ -1,0 +1,1253 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:#475569;font-family:'Manrope',system-ui,sans-serif}
+a{color:#1A56DB}a:hover{color:#1447B8}
+::-webkit-scrollbar{display:none}
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+@keyframes logoIn{0%{opacity:0;transform:scale(.4)}65%{transform:scale(1.1)}100%{opacity:1;transform:scale(1)}}
+@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+</style>
+</helmet>
+
+<div style="min-height:100vh;display:flex;align-items:flex-start;justify-content:center;padding:40px;background:linear-gradient(135deg,#334155,#1E293B)">
+<div id="capture-root" style="width:492px;height:972px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#334155,#1E293B);border-radius:24px">
+<x-import component-from-global-scope="AndroidDevice" from="./android-frame.jsx" dark="{{ statusDark }}" hint-size="412px,892px">
+
+<div style="height:812px;position:relative;overflow:hidden;font-family:'Manrope',system-ui,sans-serif">
+
+<!-- ░░ SPLASH ░░ -->
+<sc-if value="{{ isSplash }}" hint-placeholder-val="{{ true }}">
+<div style="position:absolute;inset:0;background:linear-gradient(160deg,#0F172A 0%,#1E3A8A 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px">
+  <div style="animation:logoIn .75s ease both">
+    <svg width="90" height="90" viewBox="0 0 80 80"><defs><linearGradient id="lg1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".4"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient></defs><rect width="80" height="80" rx="22" fill="#1A56DB"/><rect width="80" height="80" rx="22" fill="url(#lg1)"/><path d="M24 20v24a16 16 0 0032 0V20" stroke="white" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M48 46l6 6 10-12" stroke="#FBBF24" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+  </div>
+  <div style="text-align:center;animation:fadeUp .5s .4s ease both">
+    <div style="font-size:40px;font-weight:800;color:white;letter-spacing:-1.5px;line-height:1">usto</div>
+    <div style="font-size:13px;color:rgba(255,255,255,.5);margin-top:8px;font-weight:500">Найди мастера за 2 минуты</div>
+    <div style="font-size:11px;color:rgba(255,255,255,.28);margin-top:3px;font-style:italic">Усторо дар 2 дақиқа ёбед</div>
+  </div>
+  <div style="animation:fadeIn .3s .9s ease both">
+    <div style="width:28px;height:28px;border:3px solid rgba(255,255,255,.15);border-top-color:rgba(255,255,255,.7);border-radius:50%;animation:spin 1s linear infinite"></div>
+  </div>
+</div>
+</sc-if>
+
+<!-- ░░ ONBOARDING ░░ -->
+<sc-if value="{{ isOnboarding }}" hint-placeholder-val="{{ false }}">
+<div style="position:absolute;inset:0;background:#0F172A;display:flex;flex-direction:column;animation:fadeIn .2s ease both">
+  <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 28px 20px">
+    <div style="width:172px;height:172px;background:linear-gradient(135deg,#1E3A8A,#1A56DB);border-radius:48px;display:flex;align-items:center;justify-content:center;margin-bottom:32px;box-shadow:0 24px 64px rgba(26,86,219,.4)">
+      <span style="font-size:78px;line-height:1">{{ obEmoji }}</span>
+    </div>
+    <div style="font-size:25px;font-weight:800;color:white;text-align:center;line-height:1.2;margin-bottom:6px">{{ obTitle }}</div>
+    <div style="font-size:12px;color:rgba(255,255,255,.35);text-align:center;margin-bottom:10px;font-style:italic">{{ obTitleTj }}</div>
+    <div style="font-size:14px;color:rgba(255,255,255,.5);text-align:center;line-height:1.6;max-width:280px">{{ obDesc }}</div>
+  </div>
+  <div style="display:flex;gap:6px;justify-content:center;padding-bottom:18px">
+    <sc-for list="{{ obDots }}" as="dot" hint-placeholder-count="3">
+      <div style="width:{{ dot.w }};height:5px;background:{{ dot.bg }};border-radius:3px;transition:all .35s ease"></div>
+    </sc-for>
+  </div>
+  <div style="padding:0 18px 32px;display:flex;gap:10px">
+    <button onClick="{{ skipOnboard }}" style="flex:1;height:50px;background:rgba(255,255,255,.07);border:none;border-radius:14px;color:rgba(255,255,255,.45);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Пропустить</button>
+    <button onClick="{{ nextOnboard }}" style="flex:2;height:50px;background:#1A56DB;border:none;border-radius:14px;color:white;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">{{ obBtnLabel }}</button>
+  </div>
+</div>
+</sc-if>
+
+<!-- ░░ AUTH ░░ -->
+<sc-if value="{{ isAuth }}" hint-placeholder-val="{{ false }}">
+<div style="position:absolute;inset:0;background:white;display:flex;flex-direction:column;animation:fadeIn .2s ease both">
+
+  <!-- Phone step -->
+  <sc-if value="{{ isAuthPhone }}" hint-placeholder-val="{{ true }}">
+  <div style="flex:1;display:flex;flex-direction:column;padding:16px 18px 12px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:24px;margin-top:2px">
+      <svg width="36" height="36" viewBox="0 0 80 80"><rect width="80" height="80" rx="20" fill="#1A56DB"/><path d="M24 20v24a16 16 0 0032 0V20" stroke="white" stroke-width="8" stroke-linecap="round" fill="none"/><path d="M48 46l6 6 10-12" stroke="#FBBF24" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+      <span style="font-size:22px;font-weight:800;color:#0F172A;letter-spacing:-.5px">usto</span>
+    </div>
+    <div style="font-size:25px;font-weight:800;color:#0F172A;line-height:1.2;margin-bottom:3px">Войти в аккаунт</div>
+    <div style="font-size:11px;color:#94A3B8;margin-bottom:18px;font-style:italic">Даромадан ба аккаунт</div>
+    <div style="background:#F0F6FF;border:2px solid #1A56DB;border-radius:16px;padding:0 14px;height:54px;display:flex;align-items:center;gap:10px;margin-bottom:16px">
+      <span style="font-size:17px">🇹🇯</span>
+      <span style="font-size:15px;font-weight:700;color:#0F172A">+992</span>
+      <div style="width:1px;height:22px;background:#BFDBFE"></div>
+      <span style="font-size:18px;font-weight:700;color:#0F172A;letter-spacing:2px;flex:1">{{ phoneDisplay }}</span>
+      <div style="width:2px;height:20px;background:#1A56DB;border-radius:1px;animation:pulse 1s ease infinite"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:12px">
+      <sc-for list="{{ numPad }}" as="n" hint-placeholder-count="9">
+        <button onClick="{{ n.fn }}" style="height:56px;background:#F8FAFC;border:none;border-radius:14px;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;font-family:inherit">
+          <span style="font-size:22px;font-weight:700;color:#0F172A;line-height:1">{{ n.d }}</span>
+          <span style="font-size:7px;color:#94A3B8;letter-spacing:.8px">{{ n.sub }}</span>
+        </button>
+      </sc-for>
+      <div></div>
+      <button onClick="{{ addZero }}" style="height:56px;background:#F8FAFC;border:none;border-radius:14px;font-size:22px;font-weight:700;color:#0F172A;cursor:pointer;font-family:inherit">0</button>
+      <button onClick="{{ backspace }}" style="height:56px;background:#F8FAFC;border:none;border-radius:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-family:inherit">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#64748B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 4H8l-7 8 7 8h13a2 2 0 002-2V6a2 2 0 00-2-2z"/><line x1="18" y1="9" x2="13" y2="14"/><line x1="13" y1="9" x2="18" y2="14"/></svg>
+      </button>
+    </div>
+    <button onClick="{{ submitPhone }}" style="height:50px;background:{{ phoneBtnBg }};border:none;border-radius:14px;color:white;font-size:15px;font-weight:700;cursor:pointer;transition:background .2s;margin-bottom:10px;font-family:inherit">Получить SMS-код</button>
+    <div style="text-align:center;font-size:11px;color:#94A3B8;line-height:1.5">Продолжая, вы соглашаетесь с <span style="color:#1A56DB">офертой</span> и <span style="color:#1A56DB">политикой</span></div>
+  </div>
+  </sc-if>
+
+  <!-- OTP step -->
+  <sc-if value="{{ isAuthOtp }}" hint-placeholder-val="{{ false }}">
+  <div style="flex:1;display:flex;flex-direction:column;padding:18px 18px 24px">
+    <button onClick="{{ goBack }}" style="width:38px;height:38px;background:#F1F5F9;border:none;border-radius:11px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;margin-bottom:28px;font-family:inherit">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0F172A" stroke-width="2.5" stroke-linecap="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+    </button>
+    <div style="font-size:26px;font-weight:800;color:#0F172A;margin-bottom:6px">Введите код</div>
+    <div style="font-size:13px;color:#64748B;margin-bottom:32px">SMS отправлена на <b>+992 {{ phoneDisplay }}</b></div>
+    <div style="display:flex;gap:12px;justify-content:center;margin-bottom:20px">
+      <sc-for list="{{ otpBoxes }}" as="box" hint-placeholder-count="4">
+        <div style="width:64px;height:70px;border:2px solid {{ box.borderColor }};border-radius:16px;background:{{ box.bg }};display:flex;align-items:center;justify-content:center;font-size:30px;font-weight:800;color:#0F172A;transition:all .15s">{{ box.val }}</div>
+      </sc-for>
+    </div>
+    <div style="text-align:center;font-size:13px;color:#94A3B8;margin-bottom:28px">Демо-код: <span style="font-weight:700;color:#1A56DB">1234</span></div>
+    <button onClick="{{ confirmOtp }}" style="height:52px;background:#1A56DB;border:none;border-radius:14px;color:white;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:14px;font-family:inherit">Войти ✓</button>
+    <div style="text-align:center;font-size:13px;color:#94A3B8">Повторить через <span style="color:#1A56DB;font-weight:600">{{ otpTimerLabel }}</span></div>
+  </div>
+  </sc-if>
+
+</div>
+</sc-if>
+
+<!-- ░░ CUSTOMER HOME ░░ -->
+<sc-if value="{{ isCustomerHome }}" hint-placeholder-val="{{ false }}">
+<div style="position:absolute;inset:0;display:flex;flex-direction:column;overflow:hidden;animation:fadeIn .2s ease both">
+  <!-- Header -->
+  <div style="background:#0F172A;flex-shrink:0;padding:10px 15px 12px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <div style="display:flex;align-items:center;gap:6px">
+        <svg width="11" height="14" viewBox="0 0 12 16" fill="#60A5FA"><path d="M6 0C3.24 0 1 2.24 1 5c0 3.75 5 11 5 11s5-7.25 5-11c0-2.76-2.24-5-5-5zm0 7a2 2 0 110-4 2 2 0 010 4z"/></svg>
+        <span style="font-size:14px;font-weight:600;color:white">Душанбе</span>
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" stroke-width="3" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+      </div>
+      <div style="position:relative">
+        <div style="width:34px;height:34px;background:rgba(255,255,255,.1);border-radius:10px;display:flex;align-items:center;justify-content:center">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0"/></svg>
+        </div>
+        <div style="position:absolute;top:-1px;right:-1px;width:8px;height:8px;background:#EF4444;border-radius:50%;border:2px solid #0F172A"></div>
+      </div>
+    </div>
+    <div style="background:rgba(255,255,255,.08);border-radius:12px;height:40px;display:flex;align-items:center;padding:0 12px;gap:8px;margin-bottom:8px">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.35)" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+      <span style="font-size:13px;color:rgba(255,255,255,.3)">Что нужно сделать? / Чӣ бояд кард?</span>
+    </div>
+    <div style="display:inline-flex;align-items:center;gap:5px;background:rgba(26,86,219,.3);border-radius:8px;padding:3px 10px">
+      <div style="width:6px;height:6px;background:#60A5FA;border-radius:50%"></div>
+      <span style="font-size:10px;font-weight:600;color:#93C5FD">Режим: Заказчик</span>
+    </div>
+  </div>
+  <!-- Tab content -->
+  <div style="flex:1;position:relative;overflow:hidden">
+
+    <!-- HOME TAB -->
+    <sc-if value="{{ custTabHome }}" hint-placeholder-val="{{ true }}">
+    <div style="position:absolute;inset:0;overflow-y:auto;background:#F0F4F8;animation:fadeIn .15s ease both">
+      <div style="margin:14px 14px 0;background:linear-gradient(135deg,#1A56DB,#3B82F6);border-radius:20px;padding:18px;position:relative;overflow:hidden">
+        <div style="position:absolute;right:-14px;bottom:-18px;width:96px;height:96px;background:rgba(255,255,255,.07);border-radius:50%"></div>
+        <div style="font-size:10px;font-weight:600;color:rgba(255,255,255,.6);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Нужна помощь по дому?</div>
+        <div style="font-size:20px;font-weight:800;color:white;line-height:1.2;margin-bottom:14px">Найди мастера<br>за 2 минуты</div>
+        <button onClick="{{ goWizard }}" style="background:white;border:none;border-radius:10px;padding:9px 18px;font-size:13px;font-weight:700;color:#1A56DB;cursor:pointer;font-family:inherit">+ Создать заявку</button>
+      </div>
+      <div style="padding:16px 14px 0">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:11px">
+          <span style="font-size:16px;font-weight:700;color:#0F172A">Категории</span>
+          <span style="font-size:12px;color:#1A56DB;font-weight:600">Все →</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+          <sc-for list="{{ categories }}" as="cat" hint-placeholder-count="8">
+            <div onClick="{{ cat.fn }}" style="background:white;border-radius:14px;padding:10px 6px;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.05)">
+              <div style="width:42px;height:42px;background:{{ cat.bg }};border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:20px">{{ cat.icon }}</div>
+              <span style="font-size:9.5px;font-weight:600;color:#0F172A;text-align:center;line-height:1.2">{{ cat.name }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      <div style="padding:16px 14px 0">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:11px">
+          <span style="font-size:16px;font-weight:700;color:#0F172A">Лучшие мастера</span>
+          <span style="font-size:12px;color:#1A56DB;font-weight:600">Все →</span>
+        </div>
+        <div style="display:flex;gap:10px;overflow-x:auto;padding-bottom:4px">
+          <sc-for list="{{ featuredMasters }}" as="m" hint-placeholder-count="3">
+            <div onClick="{{ m.fn }}" style="flex:none;width:128px;background:white;border-radius:18px;padding:14px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.05)">
+              <div style="width:48px;height:48px;background:linear-gradient(135deg,{{ m.c1 }},{{ m.c2 }});border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:800;color:white;margin-bottom:8px">{{ m.ini }}</div>
+              <div style="font-size:12px;font-weight:700;color:#0F172A;margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ m.name }}</div>
+              <div style="font-size:10px;color:#64748B;margin-bottom:7px">{{ m.svc }}</div>
+              <div style="display:flex;align-items:center;gap:3px">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="#F59E0B"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                <span style="font-size:11px;font-weight:700;color:#0F172A">{{ m.rat }}</span>
+                <span style="font-size:10px;color:#94A3B8">({{ m.rev }})</span>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      <div style="padding:16px 14px 20px">
+        <div style="font-size:16px;font-weight:700;color:#0F172A;margin-bottom:10px">Активные заявки</div>
+        <div onClick="{{ openResponses }}" style="background:white;border-radius:16px;padding:14px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.05)">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:5px">
+            <span style="font-size:14px;font-weight:700;color:#0F172A;flex:1">Починить кран на кухне</span>
+            <span style="background:#DBEAFE;color:#1E40AF;font-size:11px;font-weight:600;border-radius:7px;padding:3px 8px;flex-shrink:0;margin-left:8px">4 отклика</span>
+          </div>
+          <div style="font-size:12px;color:#64748B;margin-bottom:8px">Сантехника · р-н Сино · 2 ч. назад</div>
+          <div style="display:flex;align-items:center;gap:6px">
+            <div style="flex:1;height:4px;background:#DBEAFE;border-radius:2px"><div style="width:75%;height:4px;background:#1A56DB;border-radius:2px"></div></div>
+            <span style="font-size:11px;color:#1A56DB;font-weight:600">75% охват</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- ORDERS TAB -->
+    <sc-if value="{{ custTabOrders }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;inset:0;overflow-y:auto;background:#F0F4F8;animation:fadeIn .15s ease both;padding:16px 14px">
+      <div style="font-size:16px;font-weight:700;color:#0F172A;margin-bottom:14px">Мои заявки</div>
+      <sc-for list="{{ ordersList }}" as="ord" hint-placeholder-count="2">
+        <div onClick="{{ ord.fn }}" style="background:white;border-radius:16px;padding:14px;margin-bottom:10px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.05)">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
+            <span style="font-size:14px;font-weight:700;color:#0F172A;flex:1">{{ ord.service }}</span>
+            <span style="background:{{ ord.statusBg }};color:{{ ord.statusColor }};font-size:10px;font-weight:600;border-radius:7px;padding:2px 8px;flex-shrink:0;margin-left:8px">{{ ord.statusLabel }}</span>
+          </div>
+          <div style="font-size:12px;color:#64748B;margin-bottom:8px">{{ ord.cat }} · р-н {{ ord.dist }} · {{ ord.time }}</div>
+          <div style="display:flex;align-items:center;gap:12px">
+            <span style="font-size:12px;color:#64748B">💬 {{ ord.respCount }} откликов</span>
+            <span style="font-size:12px;color:#1A56DB;font-weight:600">Смотреть →</span>
+          </div>
+        </div>
+      </sc-for>
+      <button onClick="{{ goWizard }}" style="width:100%;height:48px;background:#1A56DB;border:none;border-radius:14px;color:white;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-top:4px">+ Создать новую заявку</button>
+    </div>
+    </sc-if>
+
+    <!-- CHATS TAB -->
+    <sc-if value="{{ custTabChats }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;inset:0;overflow-y:auto;background:#F0F4F8;animation:fadeIn .15s ease both;padding:16px 14px">
+      <div style="font-size:16px;font-weight:700;color:#0F172A;margin-bottom:14px">Чаты</div>
+      <div onClick="{{ openChat }}" style="background:white;border-radius:16px;padding:14px;margin-bottom:10px;cursor:pointer;display:flex;align-items:center;gap:12px;box-shadow:0 1px 3px rgba(0,0,0,.05)">
+        <div style="width:46px;height:46px;background:linear-gradient(135deg,#1A56DB,#3B82F6);border-radius:13px;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;color:white;flex-shrink:0">ФТ</div>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">
+            <span style="font-size:13px;font-weight:700;color:#0F172A">Фаррух Т.</span>
+            <span style="font-size:10px;color:#94A3B8">14:10</span>
+          </div>
+          <div style="font-size:12px;color:#64748B;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Хорошо, еду. Адрес: ул. Рудаки 45?</div>
+          <div style="font-size:10px;color:#94A3B8;margin-top:2px">Починить кран на кухне</div>
+        </div>
+        <div style="width:8px;height:8px;background:#1A56DB;border-radius:50%;flex-shrink:0"></div>
+      </div>
+      <div style="background:white;border-radius:16px;padding:14px;cursor:pointer;display:flex;align-items:center;gap:12px;box-shadow:0 1px 3px rgba(0,0,0,.05)">
+        <div style="width:46px;height:46px;background:linear-gradient(135deg,#7C3AED,#A78BFA);border-radius:13px;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;color:white;flex-shrink:0">ДР</div>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">
+            <span style="font-size:13px;font-weight:700;color:#0F172A">Диловар Р.</span>
+            <span style="font-size:10px;color:#94A3B8">вчера</span>
+          </div>
+          <div style="font-size:12px;color:#64748B;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Оцените выполненную работу ⭐</div>
+          <div style="font-size:10px;color:#94A3B8;margin-top:2px">Сборка шкафа IKEA</div>
+        </div>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- PROFILE TAB -->
+    <sc-if value="{{ custTabProfile }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;inset:0;overflow-y:auto;background:#F0F4F8;animation:fadeIn .15s ease both;padding:14px">
+      <div style="background:white;border-radius:20px;padding:18px;margin-bottom:12px;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.05)">
+        <div style="width:68px;height:68px;background:linear-gradient(135deg,#1A56DB,#3B82F6);border-radius:20px;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:800;color:white;margin:0 auto 10px">АМ</div>
+        <div style="font-size:17px;font-weight:800;color:#0F172A;margin-bottom:2px">Алишер Матвиенко</div>
+        <div style="font-size:12px;color:#64748B;margin-bottom:14px">+992 988 12 34 56</div>
+        <div style="display:flex;gap:16px;justify-content:center">
+          <div style="text-align:center"><div style="font-size:18px;font-weight:800;color:#0F172A">2</div><div style="font-size:10px;color:#64748B">заявки</div></div>
+          <div style="width:1px;background:#F1F5F9"></div>
+          <div style="text-align:center"><div style="font-size:18px;font-weight:800;color:#0F172A">1</div><div style="font-size:10px;color:#64748B">отзыва</div></div>
+          <div style="width:1px;background:#F1F5F9"></div>
+          <div style="text-align:center"><div style="font-size:18px;font-weight:800;color:#0F172A">2024</div><div style="font-size:10px;color:#64748B">с года</div></div>
+        </div>
+      </div>
+      <div onClick="{{ switchToMaster }}" style="background:linear-gradient(135deg,#0F172A,#1E3A8A);border-radius:16px;padding:16px;margin-bottom:12px;cursor:pointer;display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <div style="font-size:14px;font-weight:700;color:white;margin-bottom:2px">Стать мастером и зарабатывать</div>
+          <div style="font-size:11px;color:rgba(255,255,255,.4)">Усто шавед ва даромад гиред</div>
+        </div>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg>
+      </div>
+      <div style="background:white;border-radius:16px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.05)">
+        <div style="padding:13px 16px;border-bottom:1px solid #F1F5F9;display:flex;align-items:center;gap:12px"><span style="font-size:16px">🔔</span><span style="font-size:13px;color:#0F172A;font-weight:500;flex:1">Уведомления</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg></div>
+        <div style="padding:13px 16px;border-bottom:1px solid #F1F5F9;display:flex;align-items:center;gap:12px"><span style="font-size:16px">🌐</span><span style="font-size:13px;color:#0F172A;font-weight:500;flex:1">Язык: Русский / Тоҷикӣ</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg></div>
+        <div style="padding:13px 16px;display:flex;align-items:center;gap:12px"><span style="font-size:16px">💬</span><span style="font-size:13px;color:#0F172A;font-weight:500;flex:1">Поддержка</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg></div>
+      </div>
+    </div>
+    </sc-if>
+
+  </div>
+  <!-- Customer Bottom Nav -->
+  <div style="display:flex;height:60px;background:white;border-top:1px solid #F1F5F9;flex-shrink:0">
+    <button onClick="{{ setCustTabHome }}" style="flex:1;border:none;background:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:0;font-family:inherit">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="{{ custNavHomeColor }}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      <span style="font-size:9.5px;font-weight:600;color:{{ custNavHomeColor }}">Главная</span>
+    </button>
+    <button onClick="{{ setCustTabOrders }}" style="flex:1;border:none;background:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:0;font-family:inherit">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="{{ custNavOrdersColor }}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/></svg>
+      <span style="font-size:9.5px;font-weight:600;color:{{ custNavOrdersColor }}">Заявки</span>
+    </button>
+    <button onClick="{{ setCustTabChats }}" style="flex:1;border:none;background:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:0;font-family:inherit">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="{{ custNavChatsColor }}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+      <span style="font-size:9.5px;font-weight:600;color:{{ custNavChatsColor }}">Чаты</span>
+    </button>
+    <button onClick="{{ setCustTabProfile }}" style="flex:1;border:none;background:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:0;font-family:inherit">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="{{ custNavProfileColor }}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      <span style="font-size:9.5px;font-weight:600;color:{{ custNavProfileColor }}">Профиль</span>
+    </button>
+  </div>
+</div>
+</sc-if>
+
+<!-- ░░ WIZARD ░░ -->
+<sc-if value="{{ isWizard }}" hint-placeholder-val="{{ false }}">
+<div style="position:absolute;inset:0;display:flex;flex-direction:column;background:white;animation:fadeIn .2s ease both">
+  <div style="padding:12px 16px 0;flex-shrink:0">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+      <button onClick="{{ prevWizStep }}" style="width:36px;height:36px;background:#F1F5F9;border:none;border-radius:11px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;font-family:inherit">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#0F172A" stroke-width="2.5" stroke-linecap="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+      </button>
+      <div style="flex:1"><div style="font-size:15px;font-weight:700;color:#0F172A">Новая заявка</div><div style="font-size:10px;color:#94A3B8">Шаг {{ wizStepNum }} из 5</div></div>
+    </div>
+    <div style="height:4px;background:#F1F5F9;border-radius:2px;margin-bottom:16px">
+      <div style="height:4px;background:#1A56DB;border-radius:2px;width:{{ wizProgress }};transition:width .3s ease"></div>
+    </div>
+  </div>
+  <div style="flex:1;overflow-y:auto;padding:0 16px">
+
+    <sc-if value="{{ wizStep0 }}" hint-placeholder-val="{{ true }}">
+    <div style="animation:fadeIn .15s ease both">
+      <div style="font-size:20px;font-weight:800;color:#0F172A;margin-bottom:3px">Что нужно сделать?</div>
+      <div style="font-size:11px;color:#94A3B8;margin-bottom:14px;font-style:italic">Чӣ бояд кард?</div>
+      <div style="display:inline-flex;align-items:center;gap:8px;background:#EFF6FF;border:1.5px solid #BFDBFE;border-radius:12px;padding:8px 14px;margin-bottom:14px;cursor:pointer">
+        <span style="font-size:16px">🔧</span>
+        <span style="font-size:13px;font-weight:600;color:#1E40AF">Сантехника</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#1A56DB" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+      </div>
+      <textarea onInput="{{ setWizDesc }}" placeholder="Опишите задачу подробно. Например: течёт смеситель на кухне, нужна замена картриджа..." style="width:100%;height:118px;border:1.5px solid #E2E8F0;border-radius:14px;padding:12px 14px;font-size:14px;color:#0F172A;resize:none;line-height:1.5;outline:none;font-family:inherit;background:#FAFAFA"></textarea>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin:5px 0 14px">
+        <span style="font-size:11px;color:#94A3B8">Мин. 10 символов</span>
+        <span style="font-size:11px;color:{{ wizDescCountColor }}">{{ wizDescLen }}/300</span>
+      </div>
+      <div style="font-size:12px;font-weight:600;color:#64748B;margin-bottom:7px">Быстрые шаблоны:</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        <div style="background:#F1F5F9;border-radius:8px;padding:5px 10px;font-size:11px;color:#374151;cursor:pointer">Течёт кран 💧</div>
+        <div style="background:#F1F5F9;border-radius:8px;padding:5px 10px;font-size:11px;color:#374151;cursor:pointer">Засор трубы 🚿</div>
+        <div style="background:#F1F5F9;border-radius:8px;padding:5px 10px;font-size:11px;color:#374151;cursor:pointer">Замена смесителя</div>
+        <div style="background:#F1F5F9;border-radius:8px;padding:5px 10px;font-size:11px;color:#374151;cursor:pointer">Протечка 🌊</div>
+      </div>
+    </div>
+    </sc-if>
+
+    <sc-if value="{{ wizStep1 }}" hint-placeholder-val="{{ false }}">
+    <div style="animation:fadeIn .15s ease both">
+      <div style="font-size:20px;font-weight:800;color:#0F172A;margin-bottom:3px">Добавьте фото</div>
+      <div style="font-size:11px;color:#94A3B8;margin-bottom:6px;font-style:italic">Аксхоро илова кунед</div>
+      <div style="font-size:13px;color:#64748B;margin-bottom:14px">Фото ускоряют отклик мастеров в 2×</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px">
+        <div style="aspect-ratio:1;background:#EFF6FF;border:2px dashed #1A56DB;border-radius:14px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;cursor:pointer">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#1A56DB" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          <span style="font-size:10px;color:#1A56DB;font-weight:600">Фото</span>
+        </div>
+        <div style="aspect-ratio:1;background:#F8FAFC;border:1.5px dashed #E2E8F0;border-radius:14px"></div>
+        <div style="aspect-ratio:1;background:#F8FAFC;border:1.5px dashed #E2E8F0;border-radius:14px"></div>
+        <div style="aspect-ratio:1;background:#F8FAFC;border:1.5px dashed #E2E8F0;border-radius:14px"></div>
+        <div style="aspect-ratio:1;background:#F8FAFC;border:1.5px dashed #E2E8F0;border-radius:14px"></div>
+        <div style="aspect-ratio:1;background:#F8FAFC;border:1.5px dashed #E2E8F0;border-radius:14px"></div>
+      </div>
+      <div style="background:#FEF3C7;border-radius:12px;padding:12px;font-size:12px;color:#92400E;line-height:1.5">💡 Фото краника, трубы и места протечки помогут мастеру оценить объём работы</div>
+    </div>
+    </sc-if>
+
+    <sc-if value="{{ wizStep2 }}" hint-placeholder-val="{{ false }}">
+    <div style="animation:fadeIn .15s ease both">
+      <div style="font-size:20px;font-weight:800;color:#0F172A;margin-bottom:3px">Где нужна помощь?</div>
+      <div style="font-size:11px;color:#94A3B8;margin-bottom:14px;font-style:italic">Кумак дар куҷо лозим аст?</div>
+      <div style="font-size:12px;font-weight:600;color:#64748B;margin-bottom:6px">Город</div>
+      <div style="border:1.5px solid #E2E8F0;border-radius:14px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;background:#FAFAFA">
+        <span style="font-size:14px;font-weight:600;color:#0F172A">Душанбе</span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+      </div>
+      <div style="font-size:12px;font-weight:600;color:#64748B;margin-bottom:8px">Район</div>
+      <div style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:14px">
+        <div style="background:#1A56DB;border-radius:10px;padding:7px 13px;font-size:12px;font-weight:600;color:white;cursor:pointer">Сино</div>
+        <div style="background:#F1F5F9;border-radius:10px;padding:7px 13px;font-size:12px;color:#374151;cursor:pointer">Фирдавси</div>
+        <div style="background:#F1F5F9;border-radius:10px;padding:7px 13px;font-size:12px;color:#374151;cursor:pointer">Шохмансур</div>
+        <div style="background:#F1F5F9;border-radius:10px;padding:7px 13px;font-size:12px;color:#374151;cursor:pointer">И.Сомони</div>
+        <div style="background:#F1F5F9;border-radius:10px;padding:7px 13px;font-size:12px;color:#374151;cursor:pointer">Испечак</div>
+      </div>
+      <div style="font-size:12px;font-weight:600;color:#64748B;margin-bottom:6px">Адрес (точный адрес виден только выбранному мастеру)</div>
+      <div style="border:1.5px solid #1A56DB;border-radius:14px;padding:12px 14px;background:#F8FAFF">
+        <input placeholder="ул. Рудаки, д. 45, кв. 12" style="width:100%;border:none;background:transparent;font-size:14px;color:#0F172A;outline:none;font-family:inherit"/>
+      </div>
+    </div>
+    </sc-if>
+
+    <sc-if value="{{ wizStep3 }}" hint-placeholder-val="{{ false }}">
+    <div style="animation:fadeIn .15s ease both">
+      <div style="font-size:20px;font-weight:800;color:#0F172A;margin-bottom:3px">Когда нужна помощь?</div>
+      <div style="font-size:11px;color:#94A3B8;margin-bottom:16px;font-style:italic">Кумак кай лозим аст?</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <sc-for list="{{ wizWhenOptions }}" as="opt" hint-placeholder-count="4">
+          <button onClick="{{ opt.fn }}" style="width:100%;padding:14px 16px;border:2px solid {{ opt.border }};border-radius:14px;background:{{ opt.bg }};text-align:left;cursor:pointer;display:flex;align-items:center;justify-content:space-between;font-family:inherit">
+            <span style="font-size:14px;font-weight:600;color:{{ opt.color }}">{{ opt.label }}</span>
+            <sc-if value="{{ opt.isSelected }}" hint-placeholder-val="{{ false }}">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1A56DB" stroke-width="2.5" stroke-linecap="round"><path d="M20 6L9 17l-5-5"/></svg>
+            </sc-if>
+          </button>
+        </sc-for>
+      </div>
+    </div>
+    </sc-if>
+
+    <sc-if value="{{ wizStep4 }}" hint-placeholder-val="{{ false }}">
+    <div style="animation:fadeIn .15s ease both">
+      <div style="font-size:20px;font-weight:800;color:#0F172A;margin-bottom:3px">Укажите бюджет</div>
+      <div style="font-size:11px;color:#94A3B8;margin-bottom:16px;font-style:italic">Буҷет · TJS</div>
+      <div style="border:1.5px solid #1A56DB;border-radius:14px;padding:12px 14px;display:flex;align-items:center;gap:10px;background:#F8FAFF;margin-bottom:10px">
+        <span style="font-size:14px;font-weight:700;color:#94A3B8">TJS</span>
+        <input placeholder="Укажите сумму" style="flex:1;border:none;background:transparent;font-size:16px;color:#0F172A;font-weight:700;outline:none;font-family:inherit"/>
+      </div>
+      <div style="background:#F1F5F9;border-radius:12px;padding:11px 14px;display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:20px">
+        <div style="width:18px;height:18px;border:2px solid #1A56DB;border-radius:5px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          <svg width="10" height="10" viewBox="0 0 12 10" fill="none" stroke="#1A56DB" stroke-width="2" stroke-linecap="round"><path d="M1 5l3 4 7-8"/></svg>
+        </div>
+        <span style="font-size:13px;color:#374151;font-weight:500">Жду предложений от мастеров</span>
+      </div>
+      <div style="background:#F8FAFC;border-radius:16px;padding:14px;border:1px solid #E2E8F0">
+        <div style="font-size:11px;font-weight:700;color:#94A3B8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">Сводка заявки</div>
+        <div style="font-size:13px;color:#0F172A;margin-bottom:5px"><b>Услуга:</b> Сантехника — ремонт крана</div>
+        <div style="font-size:13px;color:#0F172A;margin-bottom:5px"><b>Адрес:</b> Сино, ул. Рудаки 45</div>
+        <div style="font-size:13px;color:#0F172A"><b>Когда:</b> Сегодня</div>
+      </div>
+    </div>
+    </sc-if>
+
+  </div>
+  <div style="padding:12px 16px 14px;flex-shrink:0;background:white;border-top:1px solid #F1F5F9">
+    <sc-if value="{{ wizNotLast }}" hint-placeholder-val="{{ true }}">
+      <button onClick="{{ nextWizStep }}" style="width:100%;height:52px;background:#1A56DB;border:none;border-radius:14px;color:white;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Далее →</button>
+    </sc-if>
+    <sc-if value="{{ wizIsLast }}" hint-placeholder-val="{{ false }}">
+      <button onClick="{{ publishOrder }}" style="width:100%;height:52px;background:linear-gradient(135deg,#059669,#10B981);border:none;border-radius:14px;color:white;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">✓ Опубликовать заявку</button>
+    </sc-if>
+  </div>
+</div>
+</sc-if>
+
+<!-- ░░ ORDER RESPONSES ░░ -->
+<sc-if value="{{ isOrderResponses }}" hint-placeholder-val="{{ false }}">
+<div style="position:absolute;inset:0;display:flex;flex-direction:column;background:#F0F4F8;animation:fadeIn .2s ease both">
+  <div style="background:white;padding:12px 14px;border-bottom:1px solid #F1F5F9;flex-shrink:0;display:flex;align-items:center;gap:12px">
+    <button onClick="{{ goBack }}" style="width:36px;height:36px;background:#F1F5F9;border:none;border-radius:11px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;flex-shrink:0;font-family:inherit">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#0F172A" stroke-width="2.5" stroke-linecap="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+    </button>
+    <div><div style="font-size:14px;font-weight:700;color:#0F172A">Починить кран на кухне</div><div style="font-size:11px;color:#64748B">Сантехника · р-н Сино</div></div>
+  </div>
+  <div style="background:white;padding:10px 14px;border-bottom:1px solid #F1F5F9;flex-shrink:0;display:flex;align-items:center;justify-content:space-between">
+    <div style="display:flex;gap:14px">
+      <span style="font-size:12px;color:#64748B">👁 12 просмотров</span>
+      <span style="font-size:12px;color:#1A56DB;font-weight:600">💬 4 отклика</span>
+    </div>
+    <span style="background:#D1FAE5;color:#065F46;font-size:11px;font-weight:600;border-radius:7px;padding:3px 9px">Активна</span>
+  </div>
+  <div style="flex:1;overflow-y:auto;padding:12px 14px;display:flex;flex-direction:column;gap:10px">
+    <sc-for list="{{ responses }}" as="r" hint-placeholder-count="3">
+      <div style="background:white;border-radius:18px;padding:14px;box-shadow:0 1px 4px rgba(0,0,0,.06)">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+          <div style="width:44px;height:44px;background:linear-gradient(135deg,{{ r.c1 }},{{ r.c2 }});border-radius:13px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:white;flex-shrink:0">{{ r.ini }}</div>
+          <div style="flex:1">
+            <div style="display:flex;align-items:center;gap:5px">
+              <span style="font-size:13px;font-weight:700;color:#0F172A">{{ r.name }}</span>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" stroke="#1A56DB" stroke-width="2" stroke-linecap="round"/></svg>
+            </div>
+            <div style="display:flex;align-items:center;gap:3px">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="#F59E0B"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+              <span style="font-size:11px;font-weight:700;color:#0F172A">{{ r.rat }}</span>
+              <span style="font-size:10px;color:#94A3B8">({{ r.rev }})</span>
+            </div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:19px;font-weight:800;color:#0F172A">{{ r.price }}</div>
+            <div style="font-size:10px;color:#94A3B8">TJS · {{ r.time }}</div>
+          </div>
+        </div>
+        <div style="background:#F8FAFC;border-radius:10px;padding:10px 12px;font-size:12px;color:#374151;line-height:1.5;margin-bottom:10px">{{ r.comment }}</div>
+        <div style="display:flex;gap:7px">
+          <button onClick="{{ r.chatFn }}" style="flex:1;height:38px;background:#EFF6FF;border:none;border-radius:10px;color:#1A56DB;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">💬 Чат</button>
+          <button onClick="{{ r.profileFn }}" style="flex:1;height:38px;background:#F1F5F9;border:none;border-radius:10px;color:#374151;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">Профиль</button>
+          <button style="flex:1.4;height:38px;background:#1A56DB;border:none;border-radius:10px;color:white;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Выбрать ✓</button>
+        </div>
+      </div>
+    </sc-for>
+  </div>
+</div>
+</sc-if>
+
+<!-- ░░ MASTER PUBLIC PROFILE ░░ -->
+<sc-if value="{{ isMasterProfile }}" hint-placeholder-val="{{ false }}">
+<div style="position:absolute;inset:0;display:flex;flex-direction:column;background:#F0F4F8;animation:fadeIn .2s ease both">
+  <div style="flex:1;overflow-y:auto">
+    <div style="background:linear-gradient(160deg,#0F172A,#1E3A8A);padding:14px 14px 20px">
+      <button onClick="{{ goBack }}" style="width:34px;height:34px;background:rgba(255,255,255,.12);border:none;border-radius:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;margin-bottom:14px;font-family:inherit">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+      </button>
+      <div style="display:flex;align-items:flex-start;gap:14px">
+        <div style="width:70px;height:70px;background:linear-gradient(135deg,#1A56DB,#3B82F6);border-radius:22px;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:800;color:white;flex-shrink:0;border:3px solid rgba(255,255,255,.18)">ФТ</div>
+        <div style="flex:1">
+          <div style="font-size:18px;font-weight:800;color:white;margin-bottom:5px">Фаррух Турсунов</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:7px">
+            <span style="background:rgba(255,255,255,.1);border-radius:6px;padding:2px 8px;font-size:9.5px;font-weight:600;color:#93C5FD">✓ Личность</span>
+            <span style="background:rgba(255,255,255,.1);border-radius:6px;padding:2px 8px;font-size:9.5px;font-weight:600;color:#93C5FD">✓ Тест</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:5px">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="#F59E0B"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+            <span style="font-size:14px;font-weight:800;color:white">4.9</span>
+            <span style="font-size:12px;color:rgba(255,255,255,.45)">(127 отзывов)</span>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;margin-top:14px;background:rgba(255,255,255,.07);border-radius:14px;overflow:hidden">
+        <div style="flex:1;padding:11px 0;text-align:center;border-right:1px solid rgba(255,255,255,.08)"><div style="font-size:17px;font-weight:800;color:white">94</div><div style="font-size:9.5px;color:rgba(255,255,255,.4)">заказов</div></div>
+        <div style="flex:1;padding:11px 0;text-align:center;border-right:1px solid rgba(255,255,255,.08)"><div style="font-size:17px;font-weight:800;color:white">8</div><div style="font-size:9.5px;color:rgba(255,255,255,.4)">лет опыта</div></div>
+        <div style="flex:1;padding:11px 0;text-align:center"><div style="font-size:17px;font-weight:800;color:white">2022</div><div style="font-size:9.5px;color:rgba(255,255,255,.4)">платформа</div></div>
+      </div>
+    </div>
+    <div style="padding:14px">
+      <div style="font-size:11px;font-weight:700;color:#94A3B8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:7px">Услуги</div>
+      <div style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:14px">
+        <span style="background:#EFF6FF;border-radius:8px;padding:5px 11px;font-size:12px;font-weight:600;color:#1E40AF">🔧 Сантехника</span>
+        <span style="background:#F1F5F9;border-radius:8px;padding:5px 11px;font-size:12px;color:#374151">Замена труб</span>
+        <span style="background:#F1F5F9;border-radius:8px;padding:5px 11px;font-size:12px;color:#374151">Смесители</span>
+        <span style="background:#F1F5F9;border-radius:8px;padding:5px 11px;font-size:12px;color:#374151">Счётчики</span>
+      </div>
+      <div style="font-size:11px;font-weight:700;color:#94A3B8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:7px">О мастере</div>
+      <div style="font-size:13px;color:#374151;line-height:1.6;margin-bottom:14px;background:white;border-radius:14px;padding:12px">Занимаюсь сантехникой 8 лет. Работаю быстро, с гарантией на все виды работ. Выезжаю во все районы Душанбе.</div>
+      <div style="font-size:11px;font-weight:700;color:#94A3B8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Портфолио</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px">
+        <div style="aspect-ratio:1;background:linear-gradient(135deg,#1E3A8A,#1A56DB);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px">🚿</div>
+        <div style="aspect-ratio:1;background:linear-gradient(135deg,#064E3B,#059669);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px">🔧</div>
+        <div style="aspect-ratio:1;background:linear-gradient(135deg,#4C1D95,#7C3AED);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px">🏠</div>
+        <div style="aspect-ratio:1;background:#F1F5F9;border-radius:12px;display:flex;align-items:center;justify-content:center"><span style="font-size:10px;color:#94A3B8;text-align:center">+4 фото</span></div>
+      </div>
+      <div style="font-size:11px;font-weight:700;color:#94A3B8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">Отзывы (127)</div>
+      <div style="background:white;border-radius:14px;padding:13px;margin-bottom:8px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <div style="display:flex;align-items:center;gap:7px"><div style="width:28px;height:28px;background:linear-gradient(135deg,#D97706,#F59E0B);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;color:white">НА</div><span style="font-size:12px;font-weight:600;color:#0F172A">Нилуфар А.</span></div>
+          <div style="display:flex;gap:1px">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="#F59E0B"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="#F59E0B"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="#F59E0B"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="#F59E0B"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="#F59E0B"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          </div>
+        </div>
+        <div style="font-size:12px;color:#374151;line-height:1.5">Отличный мастер! Пришёл вовремя, всё сделал чисто. Кран больше не течёт!</div>
+        <div style="font-size:10px;color:#94A3B8;margin-top:4px">15 июня 2024 · Сантехника</div>
+      </div>
+      <div style="background:white;border-radius:14px;padding:13px;margin-bottom:80px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <div style="display:flex;align-items:center;gap:7px"><div style="width:28px;height:28px;background:linear-gradient(135deg,#059669,#10B981);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;color:white">ДМ</div><span style="font-size:12px;font-weight:600;color:#0F172A">Давид М.</span></div>
+          <div style="display:flex;gap:1px">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="#F59E0B"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="#F59E0B"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="#F59E0B"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="#F59E0B"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="#E2E8F0"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          </div>
+        </div>
+        <div style="font-size:12px;color:#374151;line-height:1.5">Хорошая работа, немного задержался. В целом доволен.</div>
+        <div style="font-size:10px;color:#94A3B8;margin-top:4px">3 июня 2024 · Сантехника</div>
+      </div>
+    </div>
+  </div>
+  <div style="position:absolute;bottom:0;left:0;right:0;padding:10px 14px 14px;background:white;border-top:1px solid #F1F5F9">
+    <button style="width:100%;height:50px;background:#1A56DB;border:none;border-radius:14px;color:white;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">📋 Предложить заказ</button>
+  </div>
+</div>
+</sc-if>
+
+<!-- ░░ MASTER HOME ░░ -->
+<sc-if value="{{ isMasterHome }}" hint-placeholder-val="{{ false }}">
+<div style="position:absolute;inset:0;display:flex;flex-direction:column;overflow:hidden;animation:fadeIn .2s ease both">
+  <div style="background:#0F172A;flex-shrink:0;padding:10px 15px 12px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+      <div style="display:flex;align-items:center;gap:6px">
+        <svg width="11" height="14" viewBox="0 0 12 16" fill="#60A5FA"><path d="M6 0C3.24 0 1 2.24 1 5c0 3.75 5 11 5 11s5-7.25 5-11c0-2.76-2.24-5-5-5zm0 7a2 2 0 110-4 2 2 0 010 4z"/></svg>
+        <span style="font-size:14px;font-weight:600;color:white">Душанбе</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <div style="background:rgba(16,185,129,.15);border-radius:8px;padding:3px 10px;display:flex;align-items:center;gap:5px">
+          <div style="width:6px;height:6px;background:#10B981;border-radius:50%"></div>
+          <span style="font-size:10px;font-weight:600;color:#34D399">Онлайн</span>
+        </div>
+        <div style="width:34px;height:34px;background:rgba(255,255,255,.08);border-radius:10px;display:flex;align-items:center;justify-content:center">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0"/></svg>
+        </div>
+      </div>
+    </div>
+    <div style="background:rgba(255,255,255,.07);border-radius:12px;padding:10px 13px;display:flex;align-items:center;justify-content:space-between">
+      <div>
+        <div style="font-size:10px;color:rgba(255,255,255,.35);margin-bottom:1px">Кошелёк</div>
+        <div style="font-size:18px;font-weight:800;color:white">{{ walletBalance }} TJS</div>
+      </div>
+      <div style="background:rgba(26,86,219,.25);border-radius:8px;padding:3px 10px;display:flex;align-items:center;gap:5px">
+        <div style="width:6px;height:6px;background:#60A5FA;border-radius:50%"></div>
+        <span style="font-size:10px;font-weight:600;color:#93C5FD">Режим: Мастер</span>
+      </div>
+    </div>
+  </div>
+  <div style="flex:1;position:relative;overflow:hidden">
+
+    <!-- FEED TAB -->
+    <sc-if value="{{ masterTabFeed }}" hint-placeholder-val="{{ true }}">
+    <div style="position:absolute;inset:0;overflow-y:auto;background:#F0F4F8;animation:fadeIn .15s ease both">
+      <div style="padding:10px 14px 6px;display:flex;gap:7px;overflow-x:auto">
+        <div style="flex:none;background:#1A56DB;border-radius:20px;padding:6px 14px;font-size:11px;font-weight:600;color:white">Все</div>
+        <div style="flex:none;background:white;border-radius:20px;padding:6px 14px;font-size:11px;color:#374151;border:1px solid #E2E8F0">Сантехника</div>
+        <div style="flex:none;background:white;border-radius:20px;padding:6px 14px;font-size:11px;color:#374151;border:1px solid #E2E8F0">Электрика</div>
+        <div style="flex:none;background:white;border-radius:20px;padding:6px 14px;font-size:11px;color:#374151;border:1px solid #E2E8F0">С фото</div>
+      </div>
+      <div style="padding:6px 14px 16px;display:flex;flex-direction:column;gap:10px">
+        <sc-for list="{{ feedOrderActions }}" as="fo" hint-placeholder-count="4">
+          <div onClick="{{ fo.action }}" style="background:white;border-radius:18px;padding:14px;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.06)">
+            <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:6px">
+              <div style="flex:1">
+                <sc-if value="{{ fo.urgent }}" hint-placeholder-val="{{ false }}">
+                  <span style="display:inline-block;background:#FEF3C7;border-radius:5px;padding:1px 7px;font-size:10px;font-weight:700;color:#92400E;margin-bottom:3px">🔥 Срочно</span>
+                </sc-if>
+                <div style="font-size:14px;font-weight:700;color:#0F172A">{{ fo.service }}</div>
+                <div style="font-size:12px;color:#64748B;line-height:1.4;margin-top:2px">{{ fo.desc }}</div>
+              </div>
+            </div>
+            <div style="display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+              <span style="font-size:11px;color:#64748B">📍 {{ fo.district }}</span>
+              <span style="font-size:11px;font-weight:600;color:#059669">💰 {{ fo.budget }}</span>
+              <span style="font-size:11px;color:#94A3B8">🕐 {{ fo.time }}</span>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <div style="display:flex;gap:10px">
+                <span style="font-size:11px;color:#94A3B8">👁 {{ fo.views }}</span>
+                <span style="font-size:11px;color:#94A3B8">💬 {{ fo.resp }}</span>
+              </div>
+              <div style="background:#1A56DB;border-radius:10px;padding:7px 14px;font-size:12px;font-weight:700;color:white">Откликнуться</div>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- RESPONSES TAB -->
+    <sc-if value="{{ masterTabResponses }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;inset:0;overflow-y:auto;background:#F0F4F8;animation:fadeIn .15s ease both;padding:14px">
+      <div style="font-size:16px;font-weight:700;color:#0F172A;margin-bottom:12px">Мои отклики</div>
+      <div style="background:white;border-radius:14px;padding:12px;margin-bottom:12px;display:flex">
+        <div style="flex:1;text-align:center;border-right:1px solid #F1F5F9"><div style="font-size:20px;font-weight:800;color:#0F172A">4</div><div style="font-size:10px;color:#64748B">всего</div></div>
+        <div style="flex:1;text-align:center;border-right:1px solid #F1F5F9"><div style="font-size:20px;font-weight:800;color:#059669">1</div><div style="font-size:10px;color:#64748B">выбран</div></div>
+        <div style="flex:1;text-align:center"><div style="font-size:20px;font-weight:800;color:#0F172A">25%</div><div style="font-size:10px;color:#64748B">конверсия</div></div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div style="background:white;border-radius:14px;padding:12px"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px"><div style="font-size:13px;font-weight:700;color:#0F172A;flex:1">Починить кран на кухне</div><span style="background:#FEF3C7;color:#92400E;font-size:10px;font-weight:600;border-radius:7px;padding:2px 7px;margin-left:8px;flex-shrink:0">Ждём</span></div><div style="font-size:11px;color:#64748B;margin-bottom:4px">р-н Сино · только что</div><div style="font-size:13px;font-weight:700;color:#0F172A">350 TJS</div></div>
+        <div style="background:white;border-radius:14px;padding:12px"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px"><div style="font-size:13px;font-weight:700;color:#0F172A;flex:1">Установка розеток (4 шт)</div><span style="background:#D1FAE5;color:#065F46;font-size:10px;font-weight:600;border-radius:7px;padding:2px 7px;margin-left:8px;flex-shrink:0">Выбран ✓</span></div><div style="font-size:11px;color:#64748B;margin-bottom:4px">р-н Фирдавси · 1 день назад</div><div style="font-size:13px;font-weight:700;color:#059669">320 TJS</div></div>
+        <div style="background:white;border-radius:14px;padding:12px"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px"><div style="font-size:13px;font-weight:700;color:#0F172A;flex:1">Подключение стиральной машины</div><span style="background:#F3F4F6;color:#6B7280;font-size:10px;font-weight:600;border-radius:7px;padding:2px 7px;margin-left:8px;flex-shrink:0">Не выбран</span></div><div style="font-size:11px;color:#64748B;margin-bottom:4px">р-н И.Сомони · 3 дня назад</div><div style="font-size:13px;font-weight:700;color:#94A3B8">280 TJS</div></div>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- CHATS TAB (master) -->
+    <sc-if value="{{ masterTabChats }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;inset:0;overflow-y:auto;background:#F0F4F8;animation:fadeIn .15s ease both;padding:14px">
+      <div style="font-size:16px;font-weight:700;color:#0F172A;margin-bottom:12px">Чаты</div>
+      <div onClick="{{ openChat }}" style="background:white;border-radius:16px;padding:13px;cursor:pointer;display:flex;align-items:center;gap:12px;box-shadow:0 1px 3px rgba(0,0,0,.05)">
+        <div style="width:44px;height:44px;background:linear-gradient(135deg,#D97706,#F59E0B);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:white;flex-shrink:0">АМ</div>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;justify-content:space-between;margin-bottom:3px"><span style="font-size:13px;font-weight:700;color:#0F172A">Алишер М.</span><span style="font-size:10px;color:#94A3B8">14:11</span></div>
+          <div style="font-size:12px;color:#64748B;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Да, кв. 12, 3 этаж</div>
+          <div style="font-size:10px;color:#94A3B8;margin-top:2px">Починить кран на кухне</div>
+        </div>
+        <div style="width:8px;height:8px;background:#1A56DB;border-radius:50%;flex-shrink:0"></div>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- WALLET TAB -->
+    <sc-if value="{{ masterTabWallet }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;inset:0;overflow-y:auto;background:#F0F4F8;animation:fadeIn .15s ease both">
+      <div style="background:linear-gradient(135deg,#0F172A,#1E3A8A);padding:20px 16px 24px">
+        <div style="font-size:12px;color:rgba(255,255,255,.45);margin-bottom:4px">Баланс кошелька</div>
+        <div style="font-size:38px;font-weight:800;color:white;margin-bottom:4px;letter-spacing:-1px">{{ walletBalance }} <span style="font-size:20px;font-weight:600;opacity:.5">TJS</span></div>
+        <div style="font-size:11px;color:rgba(255,255,255,.35);margin-bottom:16px">≈ {{ walletUsd }} USD</div>
+        <button style="background:#1A56DB;border:none;border-radius:12px;padding:10px 24px;font-size:14px;font-weight:700;color:white;cursor:pointer;font-family:inherit">+ Пополнить</button>
+      </div>
+      <div style="padding:14px">
+        <div style="font-size:11px;font-weight:600;color:#64748B;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Быстрое пополнение</div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px">
+          <div style="background:white;border-radius:12px;padding:10px;text-align:center;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.05)"><div style="font-size:13px;font-weight:700;color:#0F172A">20</div><div style="font-size:9px;color:#94A3B8">TJS</div></div>
+          <div style="background:#EFF6FF;border-radius:12px;padding:10px;text-align:center;cursor:pointer;border:1.5px solid #1A56DB"><div style="font-size:13px;font-weight:700;color:#1A56DB">50</div><div style="font-size:9px;color:#3B82F6">TJS</div></div>
+          <div style="background:white;border-radius:12px;padding:10px;text-align:center;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.05)"><div style="font-size:13px;font-weight:700;color:#0F172A">100</div><div style="font-size:9px;color:#94A3B8">TJS</div></div>
+          <div style="background:white;border-radius:12px;padding:10px;text-align:center;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.05)"><div style="font-size:13px;font-weight:700;color:#0F172A">200</div><div style="font-size:9px;color:#94A3B8">TJS</div></div>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:16px">
+          <div style="flex:1;background:white;border-radius:12px;padding:10px 12px;display:flex;align-items:center;gap:8px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.05)"><span style="font-size:18px">💳</span><span style="font-size:11px;font-weight:600;color:#0F172A">alif mobi</span></div>
+          <div style="flex:1;background:white;border-radius:12px;padding:10px 12px;display:flex;align-items:center;gap:8px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.05)"><span style="font-size:18px">🏦</span><span style="font-size:11px;font-weight:600;color:#0F172A">Карта</span></div>
+        </div>
+        <div style="font-size:11px;font-weight:600;color:#64748B;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">История транзакций</div>
+        <div style="background:white;border-radius:16px;overflow:hidden;margin-bottom:14px">
+          <sc-for list="{{ transactions }}" as="tx" hint-placeholder-count="5">
+            <div style="padding:11px 13px;border-bottom:1px solid #F8FAFC;display:flex;align-items:center;gap:10px">
+              <div style="width:36px;height:36px;background:{{ tx.iconBg }};border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">{{ tx.icon }}</div>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:12px;font-weight:600;color:#0F172A;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ tx.label }}</div>
+                <div style="font-size:10px;color:#94A3B8">{{ tx.date }}</div>
+              </div>
+              <span style="font-size:13px;font-weight:700;color:{{ tx.color }};flex-shrink:0">{{ tx.amount }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- PROFILE TAB (master) -->
+    <sc-if value="{{ masterTabProfile }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;inset:0;overflow-y:auto;background:#F0F4F8;animation:fadeIn .15s ease both;padding:14px">
+      <div style="background:white;border-radius:20px;padding:16px;margin-bottom:12px">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+          <div style="width:58px;height:58px;background:linear-gradient(135deg,#1A56DB,#3B82F6);border-radius:17px;display:flex;align-items:center;justify-content:center;font-size:19px;font-weight:800;color:white">ФТ</div>
+          <div><div style="font-size:16px;font-weight:800;color:#0F172A">Фаррух Турсунов</div><div style="display:flex;align-items:center;gap:4px;margin-top:2px"><svg width="10" height="10" viewBox="0 0 24 24" fill="#F59E0B"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg><span style="font-size:12px;font-weight:600;color:#0F172A">4.9</span><span style="font-size:11px;color:#94A3B8">· 94 заказа</span></div></div>
+        </div>
+        <div style="background:#F8FAFC;border-radius:12px;padding:10px 12px">
+          <div style="display:flex;justify-content:space-between;margin-bottom:5px"><span style="font-size:11px;font-weight:600;color:#374151">Заполненность профиля</span><span style="font-size:11px;font-weight:700;color:#1A56DB">78%</span></div>
+          <div style="height:4px;background:#E2E8F0;border-radius:2px"><div style="width:78%;height:4px;background:#1A56DB;border-radius:2px"></div></div>
+          <div style="font-size:10px;color:#94A3B8;margin-top:4px">+ Добавьте 2 фото в портфолио</div>
+        </div>
+      </div>
+      <div style="background:linear-gradient(135deg,#0F172A,#1E3A8A);border-radius:16px;padding:14px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">
+        <div><div style="font-size:13px;font-weight:700;color:white;margin-bottom:2px">Базовый тариф</div><div style="font-size:11px;color:rgba(255,255,255,.4)">PRO — безлимит откликов</div></div>
+        <div style="background:#1A56DB;border-radius:10px;padding:6px 12px;font-size:11px;font-weight:700;color:white;cursor:pointer">PRO →</div>
+      </div>
+      <div onClick="{{ switchToCustomer }}" style="background:white;border-radius:14px;padding:13px;margin-bottom:8px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;box-shadow:0 1px 3px rgba(0,0,0,.05)">
+        <div style="display:flex;align-items:center;gap:10px"><span style="font-size:18px">🔄</span><div><div style="font-size:13px;font-weight:600;color:#0F172A">Режим заказчика</div><div style="font-size:10px;color:#94A3B8">Сделать заказ</div></div></div>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg>
+      </div>
+      <div onClick="{{ goVerification }}" style="background:white;border-radius:14px;padding:13px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;box-shadow:0 1px 3px rgba(0,0,0,.05)">
+        <div style="display:flex;align-items:center;gap:10px"><span style="font-size:18px">✅</span><div><div style="font-size:13px;font-weight:600;color:#0F172A">Верификация</div><div style="font-size:10px;color:#F59E0B;font-weight:600">Шаг 3/5 — в процессе</div></div></div>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg>
+      </div>
+    </div>
+    </sc-if>
+
+  </div>
+  <!-- Master Bottom Nav (5 items) -->
+  <div style="display:flex;height:60px;background:white;border-top:1px solid #F1F5F9;flex-shrink:0">
+    <button onClick="{{ setMasterTabFeed }}" style="flex:1;border:none;background:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:0;font-family:inherit">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="{{ masterNavFeedColor }}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      <span style="font-size:9px;font-weight:600;color:{{ masterNavFeedColor }}">Заявки</span>
+    </button>
+    <button onClick="{{ setMasterTabResponses }}" style="flex:1;border:none;background:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:0;font-family:inherit">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="{{ masterNavRespColor }}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      <span style="font-size:9px;font-weight:600;color:{{ masterNavRespColor }}">Отклики</span>
+    </button>
+    <button onClick="{{ setMasterTabChats }}" style="flex:1;border:none;background:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:0;font-family:inherit">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="{{ masterNavChatsColor }}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+      <span style="font-size:9px;font-weight:600;color:{{ masterNavChatsColor }}">Чаты</span>
+    </button>
+    <button onClick="{{ setMasterTabWallet }}" style="flex:1;border:none;background:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:0;font-family:inherit">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="{{ masterNavWalletColor }}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+      <span style="font-size:9px;font-weight:600;color:{{ masterNavWalletColor }}">Кошелёк</span>
+    </button>
+    <button onClick="{{ setMasterTabProfile }}" style="flex:1;border:none;background:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:0;font-family:inherit">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="{{ masterNavProfileColor }}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      <span style="font-size:9px;font-weight:600;color:{{ masterNavProfileColor }}">Профиль</span>
+    </button>
+  </div>
+</div>
+</sc-if>
+
+<!-- ░░ FEED ORDER DETAIL ░░ -->
+<sc-if value="{{ isFeedOrderDetail }}" hint-placeholder-val="{{ false }}">
+<div style="position:absolute;inset:0;display:flex;flex-direction:column;background:#F0F4F8;animation:fadeIn .2s ease both">
+  <div style="background:white;padding:12px 14px;border-bottom:1px solid #F1F5F9;flex-shrink:0;display:flex;align-items:center;gap:12px">
+    <button onClick="{{ goBack }}" style="width:36px;height:36px;background:#F1F5F9;border:none;border-radius:11px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;flex-shrink:0;font-family:inherit">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#0F172A" stroke-width="2.5" stroke-linecap="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+    </button>
+    <div style="flex:1"><div style="font-size:14px;font-weight:700;color:#0F172A">{{ selectedFeedService }}</div></div>
+    <span style="background:#DBEAFE;color:#1E40AF;font-size:11px;font-weight:600;border-radius:7px;padding:3px 8px;flex-shrink:0">Активна</span>
+  </div>
+  <div style="flex:1;overflow-y:auto;padding:14px">
+    <div style="background:white;border-radius:16px;padding:14px;margin-bottom:10px">
+      <div style="font-size:13px;color:#374151;line-height:1.6;margin-bottom:12px">{{ selectedFeedDesc }}</div>
+      <div style="display:flex;flex-direction:column;gap:7px">
+        <div style="display:flex;gap:8px"><span style="font-size:12px;color:#94A3B8;width:68px;flex-shrink:0">Район</span><span style="font-size:12px;font-weight:600;color:#0F172A">{{ selectedFeedDistrict }}, Душанбе</span></div>
+        <div style="display:flex;gap:8px"><span style="font-size:12px;color:#94A3B8;width:68px;flex-shrink:0">Бюджет</span><span style="font-size:12px;font-weight:700;color:#059669">{{ selectedFeedBudget }}</span></div>
+        <div style="display:flex;gap:8px"><span style="font-size:12px;color:#94A3B8;width:68px;flex-shrink:0">Когда</span><span style="font-size:12px;font-weight:600;color:#0F172A">Сегодня</span></div>
+        <div style="display:flex;gap:8px"><span style="font-size:12px;color:#94A3B8;width:68px;flex-shrink:0">Размещена</span><span style="font-size:12px;color:#64748B">{{ selectedFeedTime }}</span></div>
+      </div>
+    </div>
+    <div style="background:white;border-radius:16px;padding:14px;margin-bottom:10px">
+      <div style="font-size:11px;font-weight:700;color:#94A3B8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">Заказчик</div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="width:40px;height:40px;background:linear-gradient(135deg,#D97706,#F59E0B);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:white">АМ</div>
+        <div><div style="font-size:13px;font-weight:600;color:#0F172A">Алишер М.</div><div style="font-size:11px;color:#64748B">2 заявки · 75% завершают</div></div>
+      </div>
+    </div>
+    <div style="background:white;border-radius:16px;padding:14px;margin-bottom:10px">
+      <div style="font-size:13px;font-weight:700;color:#0F172A;margin-bottom:10px">Ваш отклик</div>
+      <div style="font-size:12px;font-weight:600;color:#64748B;margin-bottom:5px">Цена (TJS)</div>
+      <div style="border:1.5px solid #E2E8F0;border-radius:12px;padding:10px 12px;display:flex;align-items:center;gap:8px;margin-bottom:10px;background:#FAFAFA"><span style="font-size:12px;color:#94A3B8">TJS</span><input placeholder="Стоимость работ" style="flex:1;border:none;background:transparent;font-size:14px;color:#0F172A;font-weight:600;outline:none;font-family:inherit"/></div>
+      <div style="font-size:12px;font-weight:600;color:#64748B;margin-bottom:5px">Комментарий</div>
+      <textarea placeholder="Здравствуйте! Опыт 8 лет, приеду сегодня..." style="width:100%;height:72px;border:1.5px solid #E2E8F0;border-radius:12px;padding:10px 12px;font-size:13px;color:#0F172A;resize:none;outline:none;font-family:inherit;background:#FAFAFA;line-height:1.5"></textarea>
+    </div>
+    <div style="background:#FEF9C3;border-radius:14px;padding:12px 14px;margin-bottom:80px;display:flex;align-items:center;gap:10px">
+      <span style="font-size:18px">💰</span>
+      <div><div style="font-size:12px;font-weight:700;color:#78350F">Стоимость отклика: 4 TJS</div><div style="font-size:11px;color:#92400E">Списывается с кошелька при отправке</div></div>
+    </div>
+  </div>
+  <div style="position:absolute;bottom:0;left:0;right:0;padding:10px 14px 14px;background:white;border-top:1px solid #F1F5F9">
+    <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+      <span style="font-size:12px;color:#64748B">Баланс: <b style="color:#0F172A">{{ walletBalance }} TJS</b></span>
+      <span style="font-size:12px;color:#EF4444;font-weight:600">Спишется: −4 TJS</span>
+    </div>
+    <button onClick="{{ respondToOrder }}" style="width:100%;height:52px;background:linear-gradient(135deg,#1A56DB,#3B82F6);border:none;border-radius:14px;color:white;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Откликнуться за 4 TJS →</button>
+  </div>
+  <!-- Wallet confirm overlay -->
+  <sc-if value="{{ showWalletConfirm }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ cancelConfirm }}" style="position:absolute;inset:0;background:rgba(0,0,0,.55);z-index:50"></div>
+    <div style="position:absolute;bottom:0;left:0;right:0;background:white;border-radius:24px 24px 0 0;padding:22px 18px 28px;z-index:51;animation:slideUp .25s ease both">
+      <div style="width:38px;height:4px;background:#E2E8F0;border-radius:2px;margin:0 auto 18px"></div>
+      <div style="font-size:20px;font-weight:800;color:#0F172A;margin-bottom:4px">Подтвердите отклик</div>
+      <div style="font-size:12px;color:#64748B;margin-bottom:18px">{{ selectedFeedService }} · {{ selectedFeedDistrict }}</div>
+      <div style="background:#F8FAFC;border-radius:14px;padding:14px;margin-bottom:18px">
+        <div style="display:flex;justify-content:space-between;margin-bottom:7px"><span style="font-size:13px;color:#64748B">Текущий баланс</span><span style="font-size:13px;font-weight:700;color:#0F172A">{{ walletBalance }} TJS</span></div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:7px"><span style="font-size:13px;color:#64748B">Стоимость отклика</span><span style="font-size:13px;font-weight:700;color:#EF4444">−4 TJS</span></div>
+        <div style="height:1px;background:#E2E8F0;margin:8px 0"></div>
+        <div style="display:flex;justify-content:space-between"><span style="font-size:13px;font-weight:700;color:#0F172A">Остаток</span><span style="font-size:14px;font-weight:800;color:#059669">{{ walletAfter }} TJS</span></div>
+      </div>
+      <button onClick="{{ confirmResponse }}" style="width:100%;height:52px;background:#059669;border:none;border-radius:14px;color:white;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:9px;font-family:inherit">✓ Подтвердить отклик</button>
+      <button onClick="{{ cancelConfirm }}" style="width:100%;height:44px;background:#F1F5F9;border:none;border-radius:14px;color:#64748B;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Отмена</button>
+    </div>
+  </sc-if>
+</div>
+</sc-if>
+
+<!-- ░░ CHAT ░░ -->
+<sc-if value="{{ isChat }}" hint-placeholder-val="{{ false }}">
+<div style="position:absolute;inset:0;display:flex;flex-direction:column;background:#F0F4F8;animation:fadeIn .2s ease both">
+  <div style="background:white;padding:10px 14px;border-bottom:1px solid #F1F5F9;flex-shrink:0">
+    <div style="display:flex;align-items:center;gap:10px">
+      <button onClick="{{ goBack }}" style="width:34px;height:34px;background:#F1F5F9;border:none;border-radius:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;font-family:inherit">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#0F172A" stroke-width="2.5" stroke-linecap="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+      </button>
+      <div style="width:38px;height:38px;background:linear-gradient(135deg,#1A56DB,#3B82F6);border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:white;flex-shrink:0">ФТ</div>
+      <div style="flex:1"><div style="font-size:14px;font-weight:700;color:#0F172A">Фаррух Турсунов</div><div style="font-size:11px;color:#10B981;font-weight:500">● Онлайн</div></div>
+      <div style="width:34px;height:34px;background:#EFF6FF;border-radius:10px;display:flex;align-items:center;justify-content:center">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#1A56DB" stroke-width="2" stroke-linecap="round"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 014.36 13a19.79 19.79 0 01-3.07-8.67A2 2 0 013.28 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9a16 16 0 006.29 6.29l.38-.38a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z"/></svg>
+      </div>
+    </div>
+    <div style="margin-top:8px;background:#F8FAFC;border-radius:9px;padding:6px 10px;font-size:11px;color:#64748B;text-align:center">Починить кран на кухне · р-н Сино</div>
+  </div>
+  <div style="flex:1;overflow-y:auto;padding:12px 14px;display:flex;flex-direction:column;gap:8px">
+    <sc-for list="{{ chatMessages }}" as="msg" hint-placeholder-count="4">
+      <div style="display:flex;justify-content:{{ msg.fromAlign }}">
+        <div style="max-width:76%;background:{{ msg.bubbleBg }};border-radius:{{ msg.bRadius }};padding:9px 13px;box-shadow:0 1px 2px rgba(0,0,0,.06)">
+          <div style="font-size:13px;color:{{ msg.textColor }};line-height:1.45">{{ msg.text }}</div>
+          <div style="font-size:10px;color:{{ msg.timeColor }};margin-top:3px;text-align:right">{{ msg.time }}</div>
+        </div>
+      </div>
+    </sc-for>
+  </div>
+  <div style="background:white;padding:9px 12px;border-top:1px solid #F1F5F9;display:flex;align-items:center;gap:8px;flex-shrink:0">
+    <div style="flex:1;background:#F8FAFC;border-radius:22px;padding:0 14px;height:42px;display:flex;align-items:center">
+      <input value="{{ chatInput }}" onInput="{{ setChatInput }}" onKeyDown="{{ chatEnter }}" placeholder="Написать сообщение..." style="flex:1;border:none;background:transparent;font-size:13px;color:#0F172A;outline:none;font-family:inherit"/>
+    </div>
+    <button onClick="{{ sendMessage }}" style="width:42px;height:42px;background:#1A56DB;border:none;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;padding:0;font-family:inherit">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </div>
+</div>
+</sc-if>
+
+<!-- ░░ VERIFICATION ░░ -->
+<sc-if value="{{ isVerification }}" hint-placeholder-val="{{ false }}">
+<div style="position:absolute;inset:0;display:flex;flex-direction:column;background:#F0F4F8;animation:fadeIn .2s ease both">
+  <div style="background:white;padding:12px 14px;border-bottom:1px solid #F1F5F9;flex-shrink:0;display:flex;align-items:center;gap:12px">
+    <button onClick="{{ goBack }}" style="width:36px;height:36px;background:#F1F5F9;border:none;border-radius:11px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;flex-shrink:0;font-family:inherit">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#0F172A" stroke-width="2.5" stroke-linecap="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+    </button>
+    <div style="font-size:15px;font-weight:700;color:#0F172A">Верификация мастера</div>
+  </div>
+  <div style="flex:1;overflow-y:auto;padding:16px 14px">
+    <div style="background:linear-gradient(135deg,#0F172A,#1E3A8A);border-radius:18px;padding:18px;margin-bottom:20px">
+      <div style="font-size:11px;color:rgba(255,255,255,.45);margin-bottom:3px">Текущий статус</div>
+      <div style="font-size:18px;font-weight:800;color:white;margin-bottom:8px">В процессе · Шаг 3/5</div>
+      <div style="height:4px;background:rgba(255,255,255,.12);border-radius:2px"><div style="width:60%;height:4px;background:#F59E0B;border-radius:2px"></div></div>
+      <div style="font-size:11px;color:rgba(255,255,255,.35);margin-top:5px">SLA: не более 24 часов</div>
+    </div>
+    <!-- Timeline -->
+    <div style="display:flex;flex-direction:column">
+      <div style="display:flex;gap:12px;align-items:flex-start">
+        <div style="display:flex;flex-direction:column;align-items:center"><div style="width:32px;height:32px;background:#059669;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round"><path d="M20 6L9 17l-5-5"/></svg></div><div style="width:2px;height:38px;background:#E2E8F0;margin:4px 0"></div></div>
+        <div style="padding-top:4px"><div style="font-size:13px;font-weight:700;color:#0F172A">Анкета отправлена</div><div style="font-size:11px;color:#059669;margin-top:2px">✓ Выполнено</div></div>
+      </div>
+      <div style="display:flex;gap:12px;align-items:flex-start">
+        <div style="display:flex;flex-direction:column;align-items:center"><div style="width:32px;height:32px;background:#059669;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round"><path d="M20 6L9 17l-5-5"/></svg></div><div style="width:2px;height:38px;background:#E2E8F0;margin:4px 0"></div></div>
+        <div style="padding-top:4px"><div style="font-size:13px;font-weight:700;color:#0F172A">Документы проверены</div><div style="font-size:11px;color:#059669;margin-top:2px">✓ Личность подтверждена</div></div>
+      </div>
+      <div style="display:flex;gap:12px;align-items:flex-start">
+        <div style="display:flex;flex-direction:column;align-items:center"><div style="width:32px;height:32px;background:#F59E0B;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;animation:pulse 2s ease infinite"><span style="font-size:13px;font-weight:700;color:white">3</span></div><div style="width:2px;height:52px;background:#E2E8F0;margin:4px 0"></div></div>
+        <div style="padding-top:4px">
+          <div style="font-size:13px;font-weight:700;color:#0F172A">Тест по специальности</div>
+          <div style="font-size:11px;color:#F59E0B;font-weight:600;margin-top:2px">⟳ В процессе</div>
+          <div style="background:#FEF9C3;border-radius:10px;padding:10px;margin-top:8px">
+            <div style="font-size:12px;font-weight:700;color:#78350F;margin-bottom:3px">Тест: Сантехника · 10 вопросов</div>
+            <div style="font-size:11px;color:#92400E">Пройдено 7/10 · Порог: 7/10</div>
+            <div style="height:4px;background:#FDE68A;border-radius:2px;margin-top:6px"><div style="width:70%;height:4px;background:#F59E0B;border-radius:2px"></div></div>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;gap:12px;align-items:flex-start">
+        <div style="display:flex;flex-direction:column;align-items:center"><div style="width:32px;height:32px;background:#E2E8F0;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0"><span style="font-size:13px;font-weight:700;color:#94A3B8">4</span></div><div style="width:2px;height:38px;background:#E2E8F0;margin:4px 0"></div></div>
+        <div style="padding-top:4px"><div style="font-size:13px;font-weight:600;color:#94A3B8">Звонок оператора</div><div style="font-size:11px;color:#CBD5E1;margin-top:2px">5-минутная беседа, скрипт</div></div>
+      </div>
+      <div style="display:flex;gap:12px;align-items:flex-start">
+        <div style="display:flex;flex-direction:column;align-items:center"><div style="width:32px;height:32px;background:#E2E8F0;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0"><span style="font-size:13px;font-weight:700;color:#94A3B8">5</span></div></div>
+        <div style="padding-top:4px"><div style="font-size:13px;font-weight:600;color:#94A3B8">Профиль активен 🎉</div><div style="font-size:11px;color:#CBD5E1;margin-top:2px">Начинайте принимать заказы</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+</sc-if>
+
+</div>
+</x-import>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;: {&quot;width&quot;: 492, &quot;height&quot;: 972}}">
+class Component extends DCLogic {
+  state = {
+    screen: 'splash',
+    prevScreen: null,
+    onboardIdx: 0,
+    authStep: 'phone',
+    phoneDigits: '',
+    otpTimer: 60,
+    otpCode: '',
+    custTab: 'home',
+    masterTab: 'feed',
+    wizStep: 0,
+    wizDesc: '',
+    wizWhen: null,
+    selectedFeedIdx: 0,
+    walletBalance: 85,
+    showWalletConfirm: false,
+    chatMessages: [
+      { from: 'master', text: 'Ассалому алейкум! Готов помочь с краном. Опыт 8 лет', time: '14:05' },
+      { from: 'me', text: 'Салом! Когда сможете приехать?', time: '14:07' },
+      { from: 'master', text: 'Сегодня в 14:00 или 16:00, как удобно?', time: '14:08' },
+      { from: 'me', text: 'В 14:00 отлично!', time: '14:09' },
+      { from: 'master', text: 'Хорошо, еду. Адрес: ул. Рудаки 45?', time: '14:10' },
+      { from: 'me', text: 'Да, кв. 12, 3 этаж', time: '14:11' },
+    ],
+    chatInput: '',
+  };
+
+  componentDidMount() {
+    this._splashTimer = setTimeout(() => {
+      if (this.state.screen === 'splash') this.setState({ screen: 'onboarding' });
+    }, 2200);
+    window.__ustoGoto = (screen, extra) => {
+      clearTimeout(this._splashTimer);
+      clearInterval(this._otpInterval);
+      this.setState({ screen, prevScreen: null, showWalletConfirm: false, ...(extra || {}) });
+    };
+  }
+
+  componentWillUnmount() {
+    clearTimeout(this._splashTimer);
+    clearInterval(this._otpInterval);
+  }
+
+  navigate(screen) {
+    this.setState(s => ({ prevScreen: s.screen, screen }));
+  }
+
+  goBack() {
+    this.setState(s => ({ screen: s.prevScreen || 'customerHome', prevScreen: null }));
+  }
+
+  addDigit(d) {
+    this.setState(s => s.phoneDigits.length >= 9 ? null : { phoneDigits: s.phoneDigits + d });
+  }
+
+  startOtpTimer() {
+    clearInterval(this._otpInterval);
+    this._otpInterval = setInterval(() => {
+      this.setState(s => {
+        if (s.otpTimer <= 1) { clearInterval(this._otpInterval); return { otpTimer: 0 }; }
+        return { otpTimer: s.otpTimer - 1 };
+      });
+    }, 1000);
+  }
+
+  renderVals() {
+    const s = this.state;
+    const sc = s.screen;
+
+    const pd = (s.phoneDigits + '·'.repeat(Math.max(0, 9 - s.phoneDigits.length))).slice(0, 9);
+    const phoneDisplay = pd.slice(0,3) + ' ' + pd.slice(3,6) + ' ' + pd.slice(6,8) + ' ' + pd.slice(8);
+
+    const slides = [
+      { emoji: '📋', title: 'Опишите задачу', titleTj: 'Вазифаро тавсиф кунед', desc: 'Укажите что нужно сделать и прикрепите фото — мастера увидят вашу заявку за 2 минуты' },
+      { emoji: '💬', title: 'Получите отклики с ценами', titleTj: 'Барқарориро бо нархҳо гиред', desc: 'Проверенные мастера откликнутся с ценой и сроком. Сравнивайте и выбирайте лучшего' },
+      { emoji: '⭐', title: 'Выберите лучшего', titleTj: 'Беҳтаринро интихоб кунед', desc: 'Рейтинг, отзывы и портфолио. Платите напрямую — никаких скрытых комиссий' },
+    ];
+    const sl = slides[s.onboardIdx];
+
+    const feedOrdersData = [
+      { service: 'Починить кран на кухне', desc: 'Течёт смеситель, нужна замена картриджа', district: 'Сино', budget: 'до 300 TJS', time: '5 мин назад', views: 3, resp: 1, urgent: true },
+      { service: 'Установить розетки (4 шт)', desc: 'Нужно установить 4 двойные розетки в новой квартире', district: 'Фирдавси', budget: '200–400 TJS', time: '12 мин назад', views: 8, resp: 2, urgent: false },
+      { service: 'Подключить стиральную машину', desc: 'Samsung, подключение к водопроводу и канализации', district: 'И.Сомони', budget: 'до 150 TJS', time: '1 ч назад', views: 15, resp: 4, urgent: false },
+      { service: 'Поменять счётчик воды', desc: 'Плановая замена счётчика горячей воды', district: 'Шохмансур', budget: 'жду предложений', time: '2 ч назад', views: 22, resp: 6, urgent: false },
+    ];
+    const selFo = feedOrdersData[s.selectedFeedIdx];
+
+    return {
+      isSplash: sc === 'splash',
+      isOnboarding: sc === 'onboarding',
+      isAuth: sc === 'auth',
+      isCustomerHome: sc === 'customerHome',
+      isMasterHome: sc === 'masterHome',
+      isOrderResponses: sc === 'orderResponses',
+      isMasterProfile: sc === 'masterProfile',
+      isWizard: sc === 'wizard',
+      isFeedOrderDetail: sc === 'feedOrderDetail',
+      isChat: sc === 'chat',
+      isVerification: sc === 'verification',
+      statusDark: sc === 'splash' || sc === 'onboarding',
+
+      isAuthPhone: s.authStep === 'phone',
+      isAuthOtp: s.authStep === 'otp',
+      phoneDisplay,
+      phoneBtnBg: s.phoneDigits.length >= 7 ? '#1A56DB' : '#CBD5E1',
+
+      numPad: [
+        {d:'1',sub:''},{d:'2',sub:'АБВ'},{d:'3',sub:'ГДЕ'},
+        {d:'4',sub:'ЖЗИ'},{d:'5',sub:'КЛМ'},{d:'6',sub:'НОП'},
+        {d:'7',sub:'РСТ'},{d:'8',sub:'УФХ'},{d:'9',sub:'ЦЧШ'},
+      ].map(n => ({ ...n, fn: () => this.addDigit(n.d) })),
+
+      otpBoxes: [0,1,2,3].map(i => ({
+        val: s.otpCode[i] || '',
+        borderColor: i <= s.otpCode.length ? '#1A56DB' : '#E2E8F0',
+        bg: i < s.otpCode.length ? '#EFF6FF' : 'white',
+      })),
+      otpTimerLabel: s.otpTimer > 0 ? `0:${String(s.otpTimer).padStart(2,'0')}` : 'Повторить',
+
+      obEmoji: sl.emoji,
+      obTitle: sl.title,
+      obTitleTj: sl.titleTj,
+      obDesc: sl.desc,
+      obBtnLabel: s.onboardIdx < 2 ? 'Далее →' : 'Начать',
+      obDots: [0,1,2].map(i => ({
+        w: i === s.onboardIdx ? '22px' : '6px',
+        bg: i === s.onboardIdx ? '#1A56DB' : 'rgba(255,255,255,.25)',
+      })),
+
+      custTabHome: s.custTab === 'home',
+      custTabOrders: s.custTab === 'orders',
+      custTabChats: s.custTab === 'chats',
+      custTabProfile: s.custTab === 'profile',
+      custNavHomeColor: s.custTab === 'home' ? '#1A56DB' : '#94A3B8',
+      custNavOrdersColor: s.custTab === 'orders' ? '#1A56DB' : '#94A3B8',
+      custNavChatsColor: s.custTab === 'chats' ? '#1A56DB' : '#94A3B8',
+      custNavProfileColor: s.custTab === 'profile' ? '#1A56DB' : '#94A3B8',
+
+      categories: [
+        { icon: '🔧', name: 'Сантехника', bg: '#DBEAFE', fn: () => this.navigate('wizard') },
+        { icon: '⚡', name: 'Электрика', bg: '#FEF9C3', fn: () => this.navigate('wizard') },
+        { icon: '🏗️', name: 'Ремонт', bg: '#FCE7F3', fn: () => this.navigate('wizard') },
+        { icon: '🪑', name: 'Мебель', bg: '#D1FAE5', fn: () => this.navigate('wizard') },
+        { icon: '🧹', name: 'Уборка', bg: '#E0E7FF', fn: () => this.navigate('wizard') },
+        { icon: '📦', name: 'Грузчики', bg: '#FEE2E2', fn: () => this.navigate('wizard') },
+        { icon: '❄️', name: 'Кондиц.', bg: '#CFFAFE', fn: () => this.navigate('wizard') },
+        { icon: '💻', name: 'Техника', bg: '#F3F4F6', fn: () => this.navigate('wizard') },
+      ],
+
+      featuredMasters: [
+        { ini: 'ФТ', name: 'Фаррух Т.', svc: 'Сантехника', rat: '4.9', rev: '127', c1: '#1A56DB', c2: '#3B82F6', fn: () => this.navigate('masterProfile') },
+        { ini: 'РА', name: 'Рустам А.', svc: 'Электрика', rat: '4.8', rev: '89', c1: '#059669', c2: '#10B981', fn: () => this.navigate('masterProfile') },
+        { ini: 'ДР', name: 'Диловар Р.', svc: 'Ремонт', rat: '4.7', rev: '64', c1: '#7C3AED', c2: '#A78BFA', fn: () => this.navigate('masterProfile') },
+      ],
+
+      ordersList: [
+        { service: 'Починить кран на кухне', cat: 'Сантехника', dist: 'Сино', time: '2 ч. назад', respCount: 4, statusLabel: 'Активна', statusBg: '#D1FAE5', statusColor: '#065F46', fn: () => this.navigate('orderResponses') },
+        { service: 'Сборка шкафа IKEA', cat: 'Мебель', dist: 'Фирдавси', time: '3 дня назад', respCount: 7, statusLabel: 'Завершена', statusBg: '#F3F4F6', statusColor: '#6B7280', fn: null },
+      ],
+
+      responses: [
+        { ini: 'ФТ', name: 'Фаррух Турсунов', rat: '4.9', rev: 127, price: '350', comment: 'Добрый день! Опыт 8 лет, гарантия 1 год. Могу приехать сегодня', time: '2 ч назад', c1: '#1A56DB', c2: '#3B82F6', chatFn: () => this.navigate('chat'), profileFn: () => this.navigate('masterProfile') },
+        { ini: 'РИ', name: 'Рустам Исмоилов', rat: '4.6', rev: 45, price: '280', comment: 'Могу сегодня после 14:00. Все инструменты при себе', time: '3 ч назад', c1: '#059669', c2: '#10B981', chatFn: () => this.navigate('chat'), profileFn: () => this.navigate('masterProfile') },
+        { ini: 'БН', name: 'Баходур Назаров', rat: '4.8', rev: 89, price: '320', comment: 'Качественно, гарантия 6 мес. Портфолио в профиле', time: '4 ч назад', c1: '#7C3AED', c2: '#A78BFA', chatFn: () => this.navigate('chat'), profileFn: () => this.navigate('masterProfile') },
+        { ini: 'УС', name: 'Умар Саидов', rat: '4.5', rev: 31, price: '250', comment: 'Недорого и быстро. Звоните, обсудим детали', time: '5 ч назад', c1: '#D97706', c2: '#F59E0B', chatFn: () => this.navigate('chat'), profileFn: () => this.navigate('masterProfile') },
+      ],
+
+      wizStep: s.wizStep,
+      wizStepNum: s.wizStep + 1,
+      wizProgress: `${(s.wizStep + 1) / 5 * 100}%`,
+      wizStep0: s.wizStep === 0,
+      wizStep1: s.wizStep === 1,
+      wizStep2: s.wizStep === 2,
+      wizStep3: s.wizStep === 3,
+      wizStep4: s.wizStep === 4,
+      wizNotLast: s.wizStep < 4,
+      wizIsLast: s.wizStep === 4,
+      wizDesc: s.wizDesc,
+      wizDescLen: s.wizDesc.length,
+      wizDescCountColor: s.wizDesc.length >= 10 ? '#10B981' : '#94A3B8',
+      wizWhenOptions: ['Сегодня', 'Завтра', 'На неделе', 'Не срочно'].map(opt => ({
+        label: opt,
+        bg: s.wizWhen === opt ? '#1A56DB' : 'white',
+        color: s.wizWhen === opt ? 'white' : '#374151',
+        border: s.wizWhen === opt ? '#1A56DB' : '#E2E8F0',
+        isSelected: s.wizWhen === opt,
+        fn: () => this.setState({ wizWhen: opt }),
+      })),
+
+      masterTabFeed: s.masterTab === 'feed',
+      masterTabResponses: s.masterTab === 'responses',
+      masterTabChats: s.masterTab === 'chats',
+      masterTabWallet: s.masterTab === 'wallet',
+      masterTabProfile: s.masterTab === 'profile',
+      masterNavFeedColor: s.masterTab === 'feed' ? '#1A56DB' : '#94A3B8',
+      masterNavRespColor: s.masterTab === 'responses' ? '#1A56DB' : '#94A3B8',
+      masterNavChatsColor: s.masterTab === 'chats' ? '#1A56DB' : '#94A3B8',
+      masterNavWalletColor: s.masterTab === 'wallet' ? '#1A56DB' : '#94A3B8',
+      masterNavProfileColor: s.masterTab === 'profile' ? '#1A56DB' : '#94A3B8',
+
+      feedOrderActions: feedOrdersData.map((fo, idx) => ({
+        ...fo,
+        action: () => this.setState({ selectedFeedIdx: idx, screen: 'feedOrderDetail', prevScreen: 'masterHome' }),
+      })),
+
+      selectedFeedService: selFo.service,
+      selectedFeedDesc: selFo.desc,
+      selectedFeedDistrict: selFo.district,
+      selectedFeedBudget: selFo.budget,
+      selectedFeedTime: selFo.time,
+
+      showWalletConfirm: s.showWalletConfirm,
+      walletBalance: s.walletBalance,
+      walletAfter: s.walletBalance - 4,
+      walletUsd: (s.walletBalance * 0.092).toFixed(1),
+
+      transactions: [
+        { icon: '↑', iconBg: '#D1FAE5', label: 'Пополнение (карта)', amount: '+100.00', color: '#10B981', date: 'вчера, 18:30' },
+        { icon: '↓', iconBg: '#FEE2E2', label: 'Отклик: Ремонт крана · Сино', amount: '−4.00', color: '#EF4444', date: 'сегодня, 14:32' },
+        { icon: '★', iconBg: '#FEF9C3', label: 'Стартовый бонус', amount: '+5.00', color: '#10B981', date: '3 дня назад' },
+        { icon: '↓', iconBg: '#FEE2E2', label: 'Отклик: Установка розеток', amount: '−5.00', color: '#EF4444', date: '3 дня назад' },
+        { icon: '↑', iconBg: '#D1FAE5', label: 'Пополнение (alif mobi)', amount: '+50.00', color: '#10B981', date: '1 нед. назад' },
+      ],
+
+      chatMessages: s.chatMessages.map(m => ({
+        ...m,
+        fromAlign: m.from === 'me' ? 'flex-end' : 'flex-start',
+        bubbleBg: m.from === 'me' ? '#1A56DB' : 'white',
+        textColor: m.from === 'me' ? 'white' : '#0F172A',
+        timeColor: m.from === 'me' ? 'rgba(255,255,255,.55)' : '#94A3B8',
+        bRadius: m.from === 'me' ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
+      })),
+      chatInput: s.chatInput,
+
+      goBack: () => this.goBack(),
+      skipOnboard: () => this.setState({ screen: 'auth', authStep: 'phone' }),
+      nextOnboard: () => {
+        if (s.onboardIdx < 2) this.setState(ss => ({ onboardIdx: ss.onboardIdx + 1 }));
+        else this.setState({ screen: 'auth', authStep: 'phone' });
+      },
+      backspace: () => this.setState(ss => ({ phoneDigits: ss.phoneDigits.slice(0, -1) })),
+      addZero: () => this.addDigit('0'),
+      submitPhone: () => {
+        this.setState({ authStep: 'otp', otpTimer: 60, otpCode: '' });
+        this.startOtpTimer();
+      },
+      confirmOtp: () => this.setState({ screen: 'customerHome', custTab: 'home' }),
+
+      setCustTabHome: () => this.setState({ custTab: 'home' }),
+      setCustTabOrders: () => this.setState({ custTab: 'orders' }),
+      setCustTabChats: () => this.setState({ custTab: 'chats' }),
+      setCustTabProfile: () => this.setState({ custTab: 'profile' }),
+      goWizard: () => this.navigate('wizard'),
+      openResponses: () => this.navigate('orderResponses'),
+      openChat: () => this.navigate('chat'),
+      switchToMaster: () => this.setState({ screen: 'masterHome', masterTab: 'feed', prevScreen: 'customerHome' }),
+
+      prevWizStep: () => {
+        if (s.wizStep > 0) this.setState(ss => ({ wizStep: ss.wizStep - 1 }));
+        else this.goBack();
+      },
+      nextWizStep: () => { if (s.wizStep < 4) this.setState(ss => ({ wizStep: ss.wizStep + 1 })); },
+      publishOrder: () => this.setState({ screen: 'customerHome', custTab: 'orders', wizStep: 0, wizDesc: '', wizWhen: null }),
+      setWizDesc: (e) => this.setState({ wizDesc: e.target.value }),
+
+      setMasterTabFeed: () => this.setState({ masterTab: 'feed' }),
+      setMasterTabResponses: () => this.setState({ masterTab: 'responses' }),
+      setMasterTabChats: () => this.setState({ masterTab: 'chats' }),
+      setMasterTabWallet: () => this.setState({ masterTab: 'wallet' }),
+      setMasterTabProfile: () => this.setState({ masterTab: 'profile' }),
+      switchToCustomer: () => this.setState({ screen: 'customerHome', custTab: 'home', prevScreen: 'masterHome' }),
+      goVerification: () => this.navigate('verification'),
+
+      respondToOrder: () => this.setState({ showWalletConfirm: true }),
+      cancelConfirm: () => this.setState({ showWalletConfirm: false }),
+      confirmResponse: () => this.setState(ss => ({
+        walletBalance: ss.walletBalance - 4,
+        showWalletConfirm: false,
+        screen: 'masterHome',
+        masterTab: 'responses',
+        prevScreen: 'feedOrderDetail',
+      })),
+
+      setChatInput: (e) => this.setState({ chatInput: e.target.value }),
+      sendMessage: () => {
+        const text = s.chatInput.trim();
+        if (!text) return;
+        this.setState(ss => ({ chatMessages: [...ss.chatMessages, { from: 'me', text, time: '14:35' }], chatInput: '' }));
+      },
+      chatEnter: (e) => {
+        if (e.key !== 'Enter') return;
+        const text = s.chatInput.trim();
+        if (!text) return;
+        this.setState(ss => ({ chatMessages: [...ss.chatMessages, { from: 'me', text, time: '14:35' }], chatInput: '' }));
+      },
+    };
+  }
+}
+</script>
+</body>
+</html>
