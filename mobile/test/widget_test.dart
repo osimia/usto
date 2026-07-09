@@ -5,7 +5,8 @@ void main() {
   testWidgets('renders USTO auth screen', (tester) async {
     await tester.pumpWidget(const UstoApp());
 
-    expect(find.text('USTO'), findsOneWidget);
-    expect(find.text('Получить код'), findsOneWidget);
+    expect(find.text('Опишите задачу'), findsOneWidget);
+    expect(find.text('Пропустить'), findsOneWidget);
+    expect(find.text('Далее ->'), findsOneWidget);
   });
 }

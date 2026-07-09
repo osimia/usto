@@ -8,7 +8,7 @@ import (
 func newHTTPServer(cfg Config, handler http.Handler) *http.Server {
 	return &http.Server{
 		Addr:              cfg.addr(),
-		Handler:           logRequests(handler),
+		Handler:           logRequests(withCORS(handler)),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 }
@@ -40,4 +40,20 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("/api/verification/documents", a.verificationDocumentsHandler)
 	mux.HandleFunc("/", staticHandler)
 	return mux
+}
+
+func withCORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if origin := r.Header.Get("Origin"); origin != "" {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Vary", "Origin")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS")
+		}
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }

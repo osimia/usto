@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../app/brand_assets.dart';
 import '../../core/api/api_client.dart';
 
 class HomeShell extends StatefulWidget {
@@ -135,9 +136,27 @@ class _HomeShellState extends State<HomeShell> {
 
   @override
   Widget build(BuildContext context) {
+    final role = widget.user['role'] as String? ?? 'customer';
     return Scaffold(
       appBar: AppBar(
-        title: const Text('USTO'),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Image.asset(
+              BrandAssets.wordmarkDark,
+              height: 24,
+              fit: BoxFit.contain,
+              alignment: Alignment.centerLeft,
+            ),
+            const SizedBox(height: 2),
+            Text(
+              role == 'master' ? 'Кабинет мастера' : 'Кабинет заказчика',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: const Color(0xFF64748B),
+              ),
+            ),
+          ],
+        ),
         actions: [
           IconButton(
             tooltip: 'Обновить',
@@ -188,6 +207,7 @@ class _HomeShellState extends State<HomeShell> {
         },
       ),
       bottomNavigationBar: NavigationBar(
+        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
         selectedIndex: _tab,
         onDestinationSelected: (value) => setState(() => _tab = value),
         destinations: const [
@@ -232,30 +252,22 @@ class OverviewPage extends StatelessWidget {
     final profile = data.profile;
     final latestOrders = data.orders.take(2).toList();
     final latestChat = data.chats.isEmpty ? null : data.chats.first;
+    final primary = Theme.of(context).colorScheme.primary;
 
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        InfoCard(
-          icon: Icons.account_circle_outlined,
-          title: profile['name'] as String? ?? 'Профиль',
-          subtitle: '${profile['role']} · ${profile['city']}',
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: MetricCard(
-                label: 'Заявки',
-                value: data.orders.length.toString(),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: MetricCard(
-                label: 'Мастера',
-                value: data.masters.length.toString(),
-              ),
+        DashboardHero(
+          name: profile['name'] as String? ?? 'Профиль',
+          role: profile['role'] as String? ?? 'user',
+          city: profile['city'] as String? ?? 'Душанбе',
+          stats: [
+            HeroStat(label: 'Заявки', value: data.orders.length.toString()),
+            HeroStat(label: 'Мастера', value: data.masters.length.toString()),
+            HeroStat(
+              label: 'Баланс',
+              value: '${data.wallet['balance']}',
+              accent: primary,
             ),
           ],
         ),
@@ -263,11 +275,14 @@ class OverviewPage extends StatelessWidget {
         InfoCard(
           icon: Icons.account_balance_wallet_outlined,
           title: '${data.wallet['balance']} ${data.wallet['currency']}',
-          subtitle: 'Баланс мастера',
+          subtitle: 'Доступный баланс и быстрый переход к операциям',
           onTap: onOpenWallet,
         ),
         const SizedBox(height: 20),
-        SectionTitle(title: 'Свежие заявки'),
+        const SectionTitle(
+          title: 'Свежие заявки',
+          subtitle: 'Новые обращения, которые стоит просмотреть в первую очередь',
+        ),
         const SizedBox(height: 8),
         for (final order in latestOrders) ...[
           OrderTile(order: order, onTap: () => onOpenOrder(order)),
@@ -275,7 +290,10 @@ class OverviewPage extends StatelessWidget {
         ],
         if (latestChat != null) ...[
           const SizedBox(height: 10),
-          SectionTitle(title: 'Последний чат'),
+          const SectionTitle(
+            title: 'Последний чат',
+            subtitle: 'Продолжите диалог с клиентом или мастером',
+          ),
           const SizedBox(height: 8),
           InfoCard(
             icon: Icons.chat_bubble_outline,
@@ -306,6 +324,11 @@ class OrdersPage extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        const SectionTitle(
+          title: 'Заявки',
+          subtitle: 'Создавайте новые задачи и отслеживайте отклики по ним',
+        ),
+        const SizedBox(height: 12),
         FilledButton.icon(
           onPressed: onCreateOrder,
           icon: const Icon(Icons.add),
@@ -341,20 +364,34 @@ class MastersPage extends StatelessWidget {
     return ListView.separated(
       padding: const EdgeInsets.all(16),
       itemBuilder: (context, index) {
-        final master = masters[index];
+        if (index == 0) {
+          return const Padding(
+            padding: EdgeInsets.only(bottom: 12),
+            child: SectionTitle(
+              title: 'Мастера',
+              subtitle: 'Выбирайте по специализации, рейтингу и статусу проверки',
+            ),
+          );
+        }
+        final master = masters[index - 1];
         return InfoCard(
           icon: Icons.handyman_outlined,
           title: master['name'] as String,
           subtitle:
               '${master['service']} · ★ ${master['rating']} · ${master['price']}',
           trailing: master['verified'] == true
-              ? const Icon(Icons.verified, color: Colors.teal)
+              ? const StatusPill(
+                  icon: Icons.verified,
+                  label: 'Проверен',
+                  tone: StatusTone.success,
+                )
               : null,
           onTap: () => onOpenMaster(master),
         );
       },
-      separatorBuilder: (_, _) => const SizedBox(height: 10),
-      itemCount: masters.length,
+      separatorBuilder: (_, index) =>
+          SizedBox(height: index == 0 ? 0 : 10),
+      itemCount: masters.length + 1,
     );
   }
 }
@@ -376,20 +413,37 @@ class ProfilePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final profile = data.profile;
+    final isVerified = profile['isVerified'] == true;
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        DashboardHero(
+          name: profile['name'] as String? ?? 'Профиль',
+          role: profile['role'] as String? ?? 'user',
+          city: profile['city'] as String? ?? 'Душанбе',
+          stats: [
+            HeroStat(label: 'Заявки', value: data.orders.length.toString()),
+            HeroStat(label: 'Чаты', value: data.chats.length.toString()),
+            HeroStat(label: 'Баланс', value: '${data.wallet['balance']}'),
+          ],
+          trailing: StatusPill(
+            icon: isVerified ? Icons.verified : Icons.pending_actions_outlined,
+            label: isVerified ? 'Проверен' : 'Не проверен',
+            tone: isVerified ? StatusTone.success : StatusTone.warning,
+          ),
+        ),
+        const SizedBox(height: 12),
         InfoCard(
           icon: Icons.badge_outlined,
           title: profile['phone'] as String? ?? '',
           subtitle:
-              '${profile['name']} · ${profile['city']} · ${profile['district']}',
+              '${profile['city']} · ${profile['district']} · ${profile['role']}',
         ),
         const SizedBox(height: 10),
         InfoCard(
           icon: Icons.verified_user_outlined,
-          title: profile['isVerified'] == true ? 'Проверен' : 'Не проверен',
-          subtitle: 'Статус профиля',
+          title: isVerified ? 'Проверен' : 'Ожидает проверки',
+          subtitle: 'Статус профиля и документов',
           onTap: onVerification,
         ),
         const SizedBox(height: 16),
@@ -1428,9 +1482,22 @@ class OrderTile extends StatelessWidget {
     return InfoCard(
       icon: Icons.assignment_outlined,
       title: order['title'] as String,
-      subtitle:
-          '${order['category']} · ${order['district']} · ${order['budget']}',
-      trailing: Text('${order['responses'] ?? 0} откл.'),
+      subtitle: '${order['category']} · ${order['district']}',
+      footer: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          StatusPill(
+            icon: Icons.payments_outlined,
+            label: order['budget'] as String? ?? '',
+          ),
+          StatusPill(
+            icon: Icons.mark_chat_unread_outlined,
+            label: '${order['responses'] ?? 0} откл.',
+            tone: StatusTone.neutral,
+          ),
+        ],
+      ),
       onTap: onTap,
     );
   }
@@ -1443,6 +1510,7 @@ class InfoCard extends StatelessWidget {
     required this.title,
     required this.subtitle,
     this.trailing,
+    this.footer,
     this.onTap,
   });
 
@@ -1450,41 +1518,121 @@ class InfoCard extends StatelessWidget {
   final String title;
   final String subtitle;
   final Widget? trailing;
+  final Widget? footer;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
+    final child = Padding(
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(icon, color: Theme.of(context).colorScheme.primary),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  maxLines: footer == null ? 3 : 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: const Color(0xFF64748B),
+                    height: 1.35,
+                  ),
+                ),
+                if (footer != null) ...[
+                  const SizedBox(height: 12),
+                  footer!,
+                ],
+              ],
+            ),
+          ),
+          if (trailing case final trailingWidget?) ...[
+            const SizedBox(width: 12),
+            trailingWidget,
+          ] else if (onTap != null) ...[
+            const SizedBox(width: 12),
+            const Icon(Icons.chevron_right, color: Color(0xFF94A3B8)),
+          ],
+        ],
+      ),
+    );
     return Card(
-      child: ListTile(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
         onTap: onTap,
-        leading: Icon(icon),
-        title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
-        subtitle: Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis),
-        trailing:
-            trailing ??
-            (onTap == null ? null : const Icon(Icons.chevron_right)),
+        child: child,
       ),
     );
   }
 }
 
 class MetricCard extends StatelessWidget {
-  const MetricCard({super.key, required this.label, required this.value});
+  const MetricCard({
+    super.key,
+    required this.label,
+    required this.value,
+    this.isInverted = false,
+    this.accent,
+  });
 
   final String label;
   final String value;
+  final bool isInverted;
+  final Color? accent;
 
   @override
   Widget build(BuildContext context) {
+    final background = isInverted
+        ? Colors.white.withValues(alpha: 0.12)
+        : Colors.white;
+    final valueColor = isInverted
+        ? Colors.white
+        : (accent ?? const Color(0xFF0F172A));
+    final labelColor = isInverted
+        ? Colors.white.withValues(alpha: 0.74)
+        : const Color(0xFF64748B);
     return Card(
+      color: background,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(value, style: Theme.of(context).textTheme.headlineSmall),
+            Text(
+              value,
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.w800,
+                color: valueColor,
+              ),
+            ),
             const SizedBox(height: 4),
-            Text(label, style: Theme.of(context).textTheme.bodyMedium),
+            Text(
+              label,
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: labelColor),
+            ),
           ],
         ),
       ),
@@ -1493,17 +1641,37 @@ class MetricCard extends StatelessWidget {
 }
 
 class SectionTitle extends StatelessWidget {
-  const SectionTitle({super.key, required this.title});
+  const SectionTitle({
+    super.key,
+    required this.title,
+    this.subtitle,
+  });
 
   final String title;
+  final String? subtitle;
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      title,
-      style: Theme.of(
-        context,
-      ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: Theme.of(
+            context,
+          ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+        ),
+        if (subtitle != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            subtitle!,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: const Color(0xFF64748B),
+              height: 1.35,
+            ),
+          ),
+        ],
+      ],
     );
   }
 }
@@ -1523,7 +1691,11 @@ class EmptyState extends StatelessWidget {
           children: [
             Icon(icon, size: 40),
             const SizedBox(height: 8),
-            Text(text, textAlign: TextAlign.center),
+            Text(
+              text,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyLarge,
+            ),
           ],
         ),
       ),
@@ -1584,4 +1756,168 @@ class HomeData {
 List<Map<String, dynamic>> asMapList(Object? value) {
   if (value is! List) return [];
   return value.map((item) => Map<String, dynamic>.from(item as Map)).toList();
+}
+
+class DashboardHero extends StatelessWidget {
+  const DashboardHero({
+    super.key,
+    required this.name,
+    required this.role,
+    required this.city,
+    required this.stats,
+    this.trailing,
+  });
+
+  final String name;
+  final String role;
+  final String city;
+  final List<HeroStat> stats;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(28),
+        gradient: const LinearGradient(
+          colors: [Color(0xFF0F172A), Color(0xFF0F766E)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Image.asset(
+                    BrandAssets.appIcon,
+                    fit: BoxFit.contain,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${_roleLabel(role)} · $city',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Colors.white.withValues(alpha: 0.82),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              trailing ?? const SizedBox.shrink(),
+            ],
+          ),
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              for (var i = 0; i < stats.length; i++) ...[
+                Expanded(
+                  child: MetricCard(
+                    label: stats[i].label,
+                    value: stats[i].value,
+                    isInverted: true,
+                    accent: stats[i].accent,
+                  ),
+                ),
+                if (i != stats.length - 1) const SizedBox(width: 10),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class HeroStat {
+  const HeroStat({
+    required this.label,
+    required this.value,
+    this.accent,
+  });
+
+  final String label;
+  final String value;
+  final Color? accent;
+}
+
+enum StatusTone { neutral, success, warning }
+
+class StatusPill extends StatelessWidget {
+  const StatusPill({
+    super.key,
+    required this.icon,
+    required this.label,
+    this.tone = StatusTone.neutral,
+  });
+
+  final IconData icon;
+  final String label;
+  final StatusTone tone;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = switch (tone) {
+      StatusTone.success => (const Color(0xFFDCFCE7), const Color(0xFF166534)),
+      StatusTone.warning => (const Color(0xFFFEF3C7), const Color(0xFF92400E)),
+      StatusTone.neutral => (const Color(0xFFE2E8F0), const Color(0xFF334155)),
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: colors.$1,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: colors.$2),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              color: colors.$2,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _roleLabel(String role) {
+  switch (role) {
+    case 'master':
+      return 'Мастер';
+    case 'customer':
+      return 'Заказчик';
+    default:
+      return role;
+  }
 }

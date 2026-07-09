@@ -1,5 +1,6 @@
 import 'dart:convert';
-import 'dart:io';
+
+import 'package:http/http.dart' as http;
 
 class ApiException implements Exception {
   ApiException(this.message, {this.statusCode});
@@ -42,23 +43,22 @@ class ApiClient {
     Map<String, dynamic>? body,
   }) async {
     final uri = Uri.parse('$baseUrl$path');
-    final client = HttpClient();
     try {
-      final request = await client.openUrl(method, uri);
-      request.headers.contentType = ContentType.json;
-      request.headers.set(HttpHeaders.acceptHeader, 'application/json');
+      final headers = <String, String>{
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      };
       if (accessToken != null) {
-        request.headers.set(
-          HttpHeaders.authorizationHeader,
-          'Bearer $accessToken',
-        );
+        headers['Authorization'] = 'Bearer $accessToken';
       }
-      if (body != null) {
-        request.write(jsonEncode(body));
-      }
-
-      final response = await request.close();
-      final text = await response.transform(utf8.decoder).join();
+      final requestBody = body == null ? null : jsonEncode(body);
+      final response = await switch (method) {
+        'GET' => http.get(uri, headers: headers),
+        'POST' => http.post(uri, headers: headers, body: requestBody),
+        'PATCH' => http.patch(uri, headers: headers, body: requestBody),
+        _ => throw ApiException('Unsupported method: $method'),
+      };
+      final text = response.body;
       final data = text.isEmpty ? <String, dynamic>{} : _decodeObject(text);
       if (response.statusCode < 200 || response.statusCode >= 300) {
         final error = data['error'];
@@ -74,10 +74,8 @@ class ApiClient {
         );
       }
       return data;
-    } on SocketException {
+    } on http.ClientException {
       throw ApiException('Не удалось подключиться к API: $baseUrl');
-    } finally {
-      client.close(force: true);
     }
   }
 
