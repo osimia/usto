@@ -26,13 +26,15 @@ class _AuthScreenState extends State<AuthScreen> {
       icon: Icons.assignment_outlined,
       title: 'Опишите задачу',
       subtitle: 'Вазифаро тавсиф кунед',
-      body: 'Укажите, что нужно сделать, и мастера увидят вашу заявку за пару минут.',
+      body:
+          'Укажите, что нужно сделать, и мастера увидят вашу заявку за пару минут.',
     ),
     _OnboardingItem(
       icon: Icons.groups_2_outlined,
       title: 'Сравните мастеров',
       subtitle: 'Устоҳоро муқоиса кунед',
-      body: 'Смотрите рейтинг, цену, портфолио и выбирайте того, кто вам подходит.',
+      body:
+          'Смотрите рейтинг, цену, портфолио и выбирайте того, кто вам подходит.',
     ),
     _OnboardingItem(
       icon: Icons.chat_bubble_outline,
@@ -92,11 +94,7 @@ class _AuthScreenState extends State<AuthScreen> {
     try {
       final auth = await widget.apiClient.postJson(
         '/auth/verify-code',
-        body: {
-          'phone': _phone,
-          'code': _codeDigits,
-          'role': _role,
-        },
+        body: {'phone': _phone, 'code': _codeDigits, 'role': _role},
       );
       widget.onSignedIn(auth);
     } on ApiException catch (error) {
@@ -281,7 +279,9 @@ class _AuthScreenState extends State<AuthScreen> {
                           curve: Curves.easeOut,
                         );
                       },
-                      child: Text(_page == _items.length - 1 ? 'Начать' : 'Далее ->'),
+                      child: Text(
+                        _page == _items.length - 1 ? 'Начать' : 'Далее ->',
+                      ),
                     ),
                   ),
                 ],
@@ -296,116 +296,135 @@ class _AuthScreenState extends State<AuthScreen> {
   Widget _buildPhone(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
+      backgroundColor: const Color(0xFFF6F8FC),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 18, 24, 18),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Image.asset(BrandAssets.appIcon, width: 56, height: 56),
-                  const SizedBox(width: 12),
-                  Image.asset(
-                    BrandAssets.wordmarkDark,
-                    height: 28,
-                    fit: BoxFit.contain,
+        child: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFFF6F8FC), Color(0xFFEEF3FF)],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 18, 24, 18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const _AuthBrandBlock(
+                  title: 'Вход в аккаунт',
+                  subtitle: 'Быстрый вход для заказчиков и мастеров',
+                ),
+                const SizedBox(height: 26),
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(28),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x120F172A),
+                        blurRadius: 24,
+                        offset: Offset(0, 12),
+                      ),
+                    ],
                   ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Номер телефона',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF1F2940),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Введите номер и выберите роль для входа',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: const Color(0xFF64748B),
+                          height: 1.4,
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      _PhoneInputCard(phoneDigits: _phoneDigits),
+                      const SizedBox(height: 14),
+                      SegmentedButton<String>(
+                        style: ButtonStyle(
+                          side: const WidgetStatePropertyAll(
+                            BorderSide(color: Color(0xFFD5E1F7)),
+                          ),
+                          padding: const WidgetStatePropertyAll(
+                            EdgeInsets.symmetric(vertical: 12),
+                          ),
+                        ),
+                        segments: const [
+                          ButtonSegment(
+                            value: 'customer',
+                            icon: Icon(Icons.person_outline),
+                            label: Text('Заказчик'),
+                          ),
+                          ButtonSegment(
+                            value: 'master',
+                            icon: Icon(Icons.handyman_outlined),
+                            label: Text('Мастер'),
+                          ),
+                        ],
+                        selected: {_role},
+                        onSelectionChanged: (value) =>
+                            setState(() => _role = value.first),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 18),
+                if (_error != null) ...[
+                  _AuthErrorBanner(message: _error!),
+                  const SizedBox(height: 12),
                 ],
-              ),
-              const SizedBox(height: 34),
-              Text(
-                'Войти в аккаунт',
-                style: theme.textTheme.headlineMedium?.copyWith(
-                  color: const Color(0xFF1F2940),
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Даромадан ба аккаунт',
-                style: theme.textTheme.titleMedium?.copyWith(
-                  color: const Color(0xFF94A3B8),
-                  fontStyle: FontStyle.italic,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 18),
-              _PhoneInputCard(phoneDigits: _phoneDigits),
-              const SizedBox(height: 12),
-              SegmentedButton<String>(
-                style: ButtonStyle(
-                  side: const WidgetStatePropertyAll(
-                    BorderSide(color: Color(0xFFD5E1F7)),
-                  ),
-                  padding: const WidgetStatePropertyAll(
-                    EdgeInsets.symmetric(vertical: 12),
+                Expanded(
+                  child: _AuthKeyboard(
+                    onDigit: _appendDigit,
+                    onBackspace: _removeDigit,
                   ),
                 ),
-                segments: const [
-                  ButtonSegment(
-                    value: 'customer',
-                    icon: Icon(Icons.person_outline),
-                    label: Text('Заказчик'),
+                const SizedBox(height: 12),
+                FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF2B5DE0),
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: const Color(0xFFD0D9E8),
+                    minimumSize: const Size.fromHeight(56),
                   ),
-                  ButtonSegment(
-                    value: 'master',
-                    icon: Icon(Icons.handyman_outlined),
-                    label: Text('Мастер'),
-                  ),
-                ],
-                selected: {_role},
-                onSelectionChanged: (value) =>
-                    setState(() => _role = value.first),
-              ),
-              const SizedBox(height: 18),
-              Expanded(
-                child: _AuthKeyboard(
-                  onDigit: _appendDigit,
-                  onBackspace: _removeDigit,
+                  onPressed: _loading || _phoneDigits.length != 9
+                      ? null
+                      : _requestCode,
+                  child: Text(_loading ? 'Отправляем...' : 'Получить SMS-код'),
                 ),
-              ),
-              if (_error != null) ...[
-                const SizedBox(height: 10),
-                Text(
-                  _error!,
+                const SizedBox(height: 18),
+                Text.rich(
+                  TextSpan(
+                    text: 'Продолжая, вы соглашаетесь с ',
+                    children: [
+                      TextSpan(
+                        text: 'офертой',
+                        style: const TextStyle(color: Color(0xFF2B5DE0)),
+                      ),
+                      const TextSpan(text: ' и '),
+                      TextSpan(
+                        text: 'политикой',
+                        style: const TextStyle(color: Color(0xFF2B5DE0)),
+                      ),
+                    ],
+                  ),
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: theme.colorScheme.error),
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: const Color(0xFF94A3B8),
+                  ),
                 ),
               ],
-              const SizedBox(height: 12),
-              FilledButton(
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF2B5DE0),
-                  foregroundColor: Colors.white,
-                  disabledBackgroundColor: const Color(0xFFD0D9E8),
-                ),
-                onPressed:
-                    _loading || _phoneDigits.length != 9 ? null : _requestCode,
-                child: Text(_loading ? 'Отправляем...' : 'Получить SMS-код'),
-              ),
-              const SizedBox(height: 18),
-              Text.rich(
-                TextSpan(
-                  text: 'Продолжая, вы соглашаетесь с ',
-                  children: [
-                    TextSpan(
-                      text: 'офертой',
-                      style: const TextStyle(color: Color(0xFF2B5DE0)),
-                    ),
-                    const TextSpan(text: ' и '),
-                    TextSpan(
-                      text: 'политикой',
-                      style: const TextStyle(color: Color(0xFF2B5DE0)),
-                    ),
-                  ],
-                ),
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: const Color(0xFF94A3B8),
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -415,101 +434,133 @@ class _AuthScreenState extends State<AuthScreen> {
   Widget _buildCode(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
+      backgroundColor: const Color(0xFFF6F8FC),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 18, 24, 18),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  IconButton(
-                    onPressed: () => setState(() => _step = _AuthStep.phone),
-                    icon: const Icon(Icons.arrow_back),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Подтверждение',
-                          style: theme.textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w800,
-                            color: const Color(0xFF1F2940),
-                          ),
-                        ),
-                        Text(
-                          _phone,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: const Color(0xFF94A3B8),
-                          ),
-                        ),
-                      ],
+        child: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFFF6F8FC), Color(0xFFEEF3FF)],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 18, 24, 18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    IconButton(
+                      onPressed: () => setState(() => _step = _AuthStep.phone),
+                      icon: const Icon(Icons.arrow_back),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 28),
-              Text(
-                'Введите SMS-код',
-                style: theme.textTheme.headlineMedium?.copyWith(
-                  color: const Color(0xFF1F2940),
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Барои демо код 1234-ро ворид кунед',
-                style: theme.textTheme.titleMedium?.copyWith(
-                  color: const Color(0xFF94A3B8),
-                  fontStyle: FontStyle.italic,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 22),
-              Row(
-                children: [
-                  for (var i = 0; i < 4; i++) ...[
+                    const SizedBox(width: 8),
                     Expanded(
-                      child: _CodeCell(value: i < _codeDigits.length ? _codeDigits[i] : ''),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Подтверждение входа',
+                            style: theme.textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w800,
+                              color: const Color(0xFF1F2940),
+                            ),
+                          ),
+                          Text(
+                            _phone,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: const Color(0xFF94A3B8),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                    if (i != 3) const SizedBox(width: 10),
                   ],
+                ),
+                const SizedBox(height: 24),
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(28),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x120F172A),
+                        blurRadius: 24,
+                        offset: Offset(0, 12),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Введите SMS-код',
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          color: const Color(0xFF1F2940),
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Для демо используйте код 1234',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: const Color(0xFF64748B),
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      Row(
+                        children: [
+                          for (var i = 0; i < 4; i++) ...[
+                            Expanded(
+                              child: _CodeCell(
+                                value: i < _codeDigits.length
+                                    ? _codeDigits[i]
+                                    : '',
+                              ),
+                            ),
+                            if (i != 3) const SizedBox(width: 10),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton(
+                          onPressed: _loading ? null : _requestCode,
+                          child: const Text('Отправить код повторно'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 18),
+                if (_error != null) ...[
+                  _AuthErrorBanner(message: _error!),
+                  const SizedBox(height: 12),
                 ],
-              ),
-              const SizedBox(height: 14),
-              Center(
-                child: TextButton(
-                  onPressed: _loading ? null : _requestCode,
-                  child: const Text('Отправить код повторно'),
+                Expanded(
+                  child: _AuthKeyboard(
+                    onDigit: _appendDigit,
+                    onBackspace: _removeDigit,
+                  ),
                 ),
-              ),
-              Expanded(
-                child: _AuthKeyboard(
-                  onDigit: _appendDigit,
-                  onBackspace: _removeDigit,
-                ),
-              ),
-              if (_error != null) ...[
-                const SizedBox(height: 10),
-                Text(
-                  _error!,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: theme.colorScheme.error),
+                const SizedBox(height: 12),
+                FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF2B5DE0),
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: const Color(0xFFD0D9E8),
+                    minimumSize: const Size.fromHeight(56),
+                  ),
+                  onPressed: _loading || _codeDigits.length != 4
+                      ? null
+                      : _verifyCode,
+                  child: Text(_loading ? 'Проверяем...' : 'Войти'),
                 ),
               ],
-              const SizedBox(height: 12),
-              FilledButton(
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF2B5DE0),
-                  foregroundColor: Colors.white,
-                  disabledBackgroundColor: const Color(0xFFD0D9E8),
-                ),
-                onPressed: _loading || _codeDigits.length != 4 ? null : _verifyCode,
-                child: Text(_loading ? 'Проверяем...' : 'Войти'),
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -542,7 +593,7 @@ class _PhoneInputCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
       decoration: BoxDecoration(
-        color: const Color(0xFFEFF4FF),
+        color: const Color(0xFFF8FAFF),
         borderRadius: BorderRadius.circular(26),
         border: Border.all(color: const Color(0xFF2B5DE0), width: 1.6),
       ),
@@ -586,6 +637,87 @@ class _PhoneInputCard extends StatelessWidget {
   }
 }
 
+class _AuthBrandBlock extends StatelessWidget {
+  const _AuthBrandBlock({required this.title, required this.subtitle});
+
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Image.asset(
+              BrandAssets.appIcon,
+              width: 40,
+              height: 40,
+              fit: BoxFit.contain,
+            ),
+            const SizedBox(width: 12),
+            Text(
+              'USTO',
+              style: theme.textTheme.headlineSmall?.copyWith(
+                color: const Color(0xFF111827),
+                fontWeight: FontWeight.w900,
+                fontSize: 28,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 20),
+        Text(
+          title,
+          style: theme.textTheme.headlineMedium?.copyWith(
+            color: const Color(0xFF1F2940),
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          subtitle,
+          style: theme.textTheme.bodyLarge?.copyWith(
+            color: const Color(0xFF64748B),
+            height: 1.4,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _AuthErrorBanner extends StatelessWidget {
+  const _AuthErrorBanner({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFEF2F2),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFFECACA)),
+      ),
+      child: Text(
+        message,
+        textAlign: TextAlign.center,
+        style: const TextStyle(
+          color: Color(0xFFB91C1C),
+          fontWeight: FontWeight.w600,
+          height: 1.35,
+        ),
+      ),
+    );
+  }
+}
+
 class _CodeCell extends StatelessWidget {
   const _CodeCell({required this.value});
 
@@ -600,7 +732,9 @@ class _CodeCell extends StatelessWidget {
         color: const Color(0xFFF8FAFC),
         borderRadius: BorderRadius.circular(22),
         border: Border.all(
-          color: value.isEmpty ? const Color(0xFFD9E2F2) : const Color(0xFF2B5DE0),
+          color: value.isEmpty
+              ? const Color(0xFFD9E2F2)
+              : const Color(0xFF2B5DE0),
           width: 1.4,
         ),
       ),
@@ -617,10 +751,7 @@ class _CodeCell extends StatelessWidget {
 }
 
 class _AuthKeyboard extends StatelessWidget {
-  const _AuthKeyboard({
-    required this.onDigit,
-    required this.onBackspace,
-  });
+  const _AuthKeyboard({required this.onDigit, required this.onBackspace});
 
   final ValueChanged<String> onDigit;
   final VoidCallback onBackspace;
@@ -648,7 +779,11 @@ class _AuthKeyboard extends StatelessWidget {
           label: label,
           onTap: () => isBackspace ? onBackspace() : onDigit(label),
           child: isBackspace
-              ? const Icon(Icons.backspace_outlined, size: 30, color: Color(0xFF64748B))
+              ? const Icon(
+                  Icons.backspace_outlined,
+                  size: 30,
+                  color: Color(0xFF64748B),
+                )
               : Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [

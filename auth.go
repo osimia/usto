@@ -178,7 +178,7 @@ func authUserFromUserProfile(user User, p Profile) AuthUser {
 
 func (a *App) ensureUserForAuth(phone, phoneNorm, role string) (User, error) {
 	if user, err := a.userByPhoneRole(phoneNorm, role); err == nil {
-		_, _ = a.db.Exec(`UPDATE users SET last_login_at=CURRENT_TIMESTAMP WHERE id=?`, user.ID)
+		_, _ = a.db.Exec(sqlf(`UPDATE users SET last_login_at=CURRENT_TIMESTAMP WHERE id=?`), user.ID)
 		return user, nil
 	}
 
@@ -186,21 +186,17 @@ func (a *App) ensureUserForAuth(phone, phoneNorm, role string) (User, error) {
 	if err != nil {
 		return User{}, err
 	}
-	res, err := a.db.Exec(`INSERT INTO users(phone,phone_norm,role,status,profile_id,last_login_at) VALUES(?,?,?,?,?,CURRENT_TIMESTAMP)`,
+	id, err := insertID(a.db, `INSERT INTO users(phone,phone_norm,role,status,profile_id,last_login_at) VALUES(?,?,?,?,?,CURRENT_TIMESTAMP)`,
 		strings.TrimSpace(phone), phoneNorm, role, "active", p.ID)
 	if err != nil {
 		return User{}, err
 	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		return User{}, err
-	}
-	return a.userByID(int(id))
+	return a.userByID(id)
 }
 
 func (a *App) userByPhoneRole(phoneNorm, role string) (User, error) {
 	var user User
-	err := a.db.QueryRow(`SELECT id,phone,phone_norm,role,status,profile_id FROM users WHERE phone_norm=? AND role=?`, phoneNorm, role).
+	err := a.db.QueryRow(sqlf(`SELECT id,phone,phone_norm,role,status,profile_id FROM users WHERE phone_norm=? AND role=?`), phoneNorm, role).
 		Scan(&user.ID, &user.Phone, &user.PhoneNorm, &user.Role, &user.Status, &user.ProfileID)
 	if err != nil {
 		return User{}, err
@@ -210,7 +206,7 @@ func (a *App) userByPhoneRole(phoneNorm, role string) (User, error) {
 
 func (a *App) userByID(id int) (User, error) {
 	var user User
-	err := a.db.QueryRow(`SELECT id,phone,phone_norm,role,status,profile_id FROM users WHERE id=?`, id).
+	err := a.db.QueryRow(sqlf(`SELECT id,phone,phone_norm,role,status,profile_id FROM users WHERE id=?`), id).
 		Scan(&user.ID, &user.Phone, &user.PhoneNorm, &user.Role, &user.Status, &user.ProfileID)
 	if err != nil {
 		return User{}, err

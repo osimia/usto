@@ -64,7 +64,7 @@ func (a *App) updateMyProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := a.db.Exec(`UPDATE profiles SET name=?, city=?, district=?, avatar_url=? WHERE id=?`,
+	if _, err := a.db.Exec(sqlf(`UPDATE profiles SET name=?, city=?, district=?, avatar_url=? WHERE id=?`),
 		name, city, district, avatarURL, user.ProfileID); err != nil {
 		serverError(w, err)
 		return
@@ -94,10 +94,10 @@ func (a *App) currentUserProfile(w http.ResponseWriter, r *http.Request) (User, 
 
 func (a *App) syncUserPhoneFromProfile(profileID int) error {
 	var phone string
-	if err := a.db.QueryRow(`SELECT phone FROM profiles WHERE id=?`, profileID).Scan(&phone); err != nil {
+	if err := a.db.QueryRow(sqlf(`SELECT phone FROM profiles WHERE id=?`), profileID).Scan(&phone); err != nil {
 		return err
 	}
-	_, err := a.db.Exec(`UPDATE users SET phone=?, phone_norm=?, updated_at=CURRENT_TIMESTAMP WHERE profile_id=?`,
+	_, err := a.db.Exec(sqlf(`UPDATE users SET phone=?, phone_norm=?, updated_at=CURRENT_TIMESTAMP WHERE profile_id=?`),
 		phone, normalizePhone(phone), profileID)
 	return err
 }

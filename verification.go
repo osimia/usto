@@ -76,11 +76,11 @@ func (a *App) verifyMaster(w http.ResponseWriter, r *http.Request) {
 	if !method(w, r, http.MethodPost) {
 		return
 	}
-	if _, err := a.db.Exec(`UPDATE profiles SET is_verified=1 WHERE role='master'`); err != nil {
+	if _, err := a.db.Exec(sqlf(`UPDATE profiles SET is_verified=1 WHERE role='master'`)); err != nil {
 		serverError(w, err)
 		return
 	}
-	if _, err := a.db.Exec(`UPDATE verification_documents SET status='approved', reviewed_at=CURRENT_TIMESTAMP WHERE master_profile_id=(SELECT id FROM profiles WHERE role='master' LIMIT 1)`); err != nil {
+	if _, err := a.db.Exec(sqlf(`UPDATE verification_documents SET status='approved', reviewed_at=CURRENT_TIMESTAMP WHERE master_profile_id=(SELECT id FROM profiles WHERE role='master' LIMIT 1)`)); err != nil {
 		serverError(w, err)
 		return
 	}
@@ -128,19 +128,15 @@ func (a *App) uploadVerificationDocument(req UploadVerificationDocumentRequest) 
 	if err != nil {
 		return VerificationDocument{}, err
 	}
-	res, err := a.db.Exec(`INSERT INTO verification_documents(master_profile_id,document_type,file_url,status) VALUES(?,?,?,?)`,
+	id, err := insertID(a.db, `INSERT INTO verification_documents(master_profile_id,document_type,file_url,status) VALUES(?,?,?,?)`,
 		master.ID, documentType, fileURL, "pending")
 	if err != nil {
 		return VerificationDocument{}, err
 	}
-	id, err := res.LastInsertId()
-	if err != nil {
+	if _, err := a.db.Exec(sqlf(`UPDATE profiles SET is_verified=0 WHERE id=?`), master.ID); err != nil {
 		return VerificationDocument{}, err
 	}
-	if _, err := a.db.Exec(`UPDATE profiles SET is_verified=0 WHERE id=?`, master.ID); err != nil {
-		return VerificationDocument{}, err
-	}
-	doc, ok := a.verificationDocumentByID(int(id), master.ID)
+	doc, ok := a.verificationDocumentByID(id, master.ID)
 	if !ok {
 		return VerificationDocument{}, errors.New("created document not found")
 	}
@@ -148,8 +144,13 @@ func (a *App) uploadVerificationDocument(req UploadVerificationDocumentRequest) 
 }
 
 func (a *App) verificationDocuments(masterProfileID int) []VerificationDocument {
-	rows, err := a.db.Query(`SELECT id,master_profile_id,document_type,file_url,status,rejection_reason,created_at,COALESCE(reviewed_at,'')
-		FROM verification_documents WHERE master_profile_id=? ORDER BY created_at DESC,id DESC`, masterProfileID)
+	query := `SELECT id,master_profile_id,document_type,file_url,status,rejection_reason,created_at,COALESCE(reviewed_at,'')
+		FROM verification_documents WHERE master_profile_id=? ORDER BY created_at DESC,id DESC`
+	if activeSQLDriver == "postgres" {
+		query = `SELECT id,master_profile_id,document_type,file_url,status,rejection_reason,created_at,COALESCE(reviewed_at::text,'')
+			FROM verification_documents WHERE master_profile_id=? ORDER BY created_at DESC,id DESC`
+	}
+	rows, err := a.db.Query(sqlf(query), masterProfileID)
 	if err != nil {
 		return nil
 	}

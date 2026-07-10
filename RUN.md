@@ -52,6 +52,94 @@ Dev-настройки авторизации:
 DEV_SMS_CODE=1234 JWT_SECRET=change-me go run .
 ```
 
+## Деплой на Railway
+
+Бэкенд подготовлен для Railway:
+
+- `Dockerfile` собирает и запускает Go-сервис;
+- `railway.json` задаёт Docker build и healthcheck;
+- доступны `GET /healthz` и `GET /api/health`;
+- поддерживаются `PostgreSQL` и `SQLite`.
+
+### Рекомендуемый вариант: PostgreSQL
+
+Для Railway лучше использовать встроенный PostgreSQL, а не SQLite на volume.
+
+### Что сделать в Railway
+
+1. Создать service из этого репозитория.
+2. Railway автоматически использует `Dockerfile`.
+3. Добавить Railway PostgreSQL.
+4. Передать `DATABASE_URL` в backend service.
+5. Задать переменные окружения:
+
+```text
+APP_ENV=production
+PORT=8080
+DB_DRIVER=postgres
+DATABASE_URL=<Railway PostgreSQL URL>
+JWT_SECRET=<long-random-secret>
+DEV_SMS_CODE=1234
+ACCESS_TOKEN_HOURS=24
+REFRESH_TOKEN_HOURS=720
+```
+
+Есть пример локального набора переменных: [.env.example](/home/osimi/Рабочий стол/usto/.env.example).
+
+### SQLite fallback
+
+Если временно нужен SQLite, тогда для Railway обязательно нужен persistent volume:
+
+```text
+DB_DRIVER=sqlite
+DB_PATH=/data/usto.db
+```
+
+### Проверка после деплоя
+
+```bash
+curl https://<your-railway-domain>/healthz
+curl https://<your-railway-domain>/api/health
+```
+
+Ожидаемый ответ:
+
+```json
+{"ok":true,"env":"production"}
+```
+
+## Локальный PostgreSQL через Docker Compose
+
+Чтобы прогнать почти тот же сценарий, что и на Railway:
+
+```bash
+docker compose up --build
+```
+
+Сервисы:
+
+- PostgreSQL: `localhost:5432`
+- Backend: `http://localhost:8080`
+
+Проверка:
+
+```bash
+curl http://localhost:8080/healthz
+curl http://localhost:8080/api/health
+```
+
+Остановить:
+
+```bash
+docker compose down
+```
+
+Остановить и удалить volume базы:
+
+```bash
+docker compose down -v
+```
+
 Проверка auth API:
 
 ```bash

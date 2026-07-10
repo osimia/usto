@@ -1,16 +1,22 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"embed"
 	"encoding/json"
 	"errors"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
+	_ "github.com/lib/pq"
 	_ "modernc.org/sqlite"
 )
 
@@ -43,18 +49,19 @@ type Master struct {
 }
 
 type Order struct {
-	ID        int    `json:"id"`
-	Title     string `json:"title"`
-	Desc      string `json:"desc"`
-	Category  string `json:"category"`
-	District  string `json:"district"`
-	Address   string `json:"address"`
-	Budget    string `json:"budget"`
-	When      string `json:"when"`
-	Status    string `json:"status"`
-	Views     int    `json:"views"`
-	Responses int    `json:"responses"`
-	CreatedAt string `json:"createdAt"`
+	ID               int    `json:"id"`
+	SelectedMasterID int    `json:"selectedMasterId,omitempty"`
+	Title            string `json:"title"`
+	Desc             string `json:"desc"`
+	Category         string `json:"category"`
+	District         string `json:"district"`
+	Address          string `json:"address"`
+	Budget           string `json:"budget"`
+	When             string `json:"when"`
+	Status           string `json:"status"`
+	Views            int    `json:"views"`
+	Responses        int    `json:"responses"`
+	CreatedAt        string `json:"createdAt"`
 }
 
 type Response struct {
@@ -151,22 +158,76 @@ func main() {
 	app := &App{db: db, cfg: cfg}
 	server := newHTTPServer(cfg, app.routes())
 
-	log.Printf("USTO started: %s", cfg.publicURL())
-	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		log.Fatal(err)
+	startPprofServer(cfg.PprofAddr)
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	serverErr := make(chan error, 1)
+	go func() {
+		log.Printf("USTO started: %s", cfg.publicURL())
+		serverErr <- server.ListenAndServe()
+	}()
+
+	select {
+	case err := <-serverErr:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatal(err)
+		}
+	case <-ctx.Done():
+		log.Println("shutdown signal received, draining in-flight requests")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			log.Printf("graceful shutdown error: %v", err)
+		}
+		log.Println("server stopped cleanly")
 	}
 }
 
 func openDB(cfg Config) (*sql.DB, error) {
-	if cfg.DBDriver != "sqlite" {
-		return nil, errors.New("only sqlite is wired in the current prototype backend")
-	}
+	setSQLDriver(cfg.DBDriver)
 
-	db, err := sql.Open("sqlite", cfg.DBPath)
-	if err != nil {
-		return nil, err
+	var (
+		db  *sql.DB
+		err error
+	)
+	switch strings.ToLower(strings.TrimSpace(cfg.DBDriver)) {
+	case "", "sqlite":
+		if err := ensureDBPath(cfg.DBPath); err != nil {
+			return nil, err
+		}
+		db, err = sql.Open("sqlite", cfg.DBPath)
+		if err != nil {
+			return nil, err
+		}
+		// SQLite only allows one writer at a time regardless of connection count,
+		// and PRAGMAs like busy_timeout are per-connection — database/sql's
+		// pool would otherwise hand out fresh connections that never got the
+		// PRAGMA applied. Capping the pool at one connection means every
+		// request serializes through the same configured connection, which also
+		// matches SQLite's actual concurrency model.
+		db.SetMaxOpenConns(1)
+		// busy_timeout makes concurrent writers block-and-retry for up to 5s
+		// instead of failing immediately with SQLITE_BUSY.
+		if _, err := db.Exec(`PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;`); err != nil {
+			return nil, err
+		}
+	case "postgres":
+		if strings.TrimSpace(cfg.DatabaseURL) == "" {
+			return nil, errors.New("DATABASE_URL is required when DB_DRIVER=postgres")
+		}
+		db, err = sql.Open("postgres", cfg.DatabaseURL)
+		if err != nil {
+			return nil, err
+		}
+		db.SetMaxOpenConns(10)
+		db.SetMaxIdleConns(5)
+		db.SetConnMaxLifetime(30 * time.Minute)
+	default:
+		return nil, errors.New("unsupported DB_DRIVER: " + cfg.DBDriver)
 	}
-	if _, err := db.Exec(`PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;`); err != nil {
+	if err := db.Ping(); err != nil {
 		return nil, err
 	}
 	if err := migrate(db); err != nil {
@@ -178,11 +239,46 @@ func openDB(cfg Config) (*sql.DB, error) {
 	if err := ensureDemoUsers(db); err != nil {
 		return nil, err
 	}
+	if err := ensureDemoChats(db); err != nil {
+		return nil, err
+	}
 	return db, nil
 }
 
+func ensureDBPath(path string) error {
+	dir := filepath.Dir(path)
+	if dir == "." || dir == "" {
+		return nil
+	}
+	return os.MkdirAll(dir, 0o755)
+}
+
 func migrate(db *sql.DB) error {
-	schema := []string{
+	schema := sqliteSchema()
+	if activeSQLDriver == "postgres" {
+		schema = postgresSchema()
+	}
+	for _, stmt := range schema {
+		if _, err := db.Exec(stmt); err != nil {
+			return err
+		}
+	}
+	if activeSQLDriver == "sqlite" {
+		if err := ensureColumn(db, "orders", "selected_master_id", `ALTER TABLE orders ADD COLUMN selected_master_id INTEGER REFERENCES masters(id)`); err != nil {
+			return err
+		}
+		if err := ensureColumn(db, "profiles", "district", `ALTER TABLE profiles ADD COLUMN district TEXT NOT NULL DEFAULT ''`); err != nil {
+			return err
+		}
+		if err := ensureColumn(db, "profiles", "avatar_url", `ALTER TABLE profiles ADD COLUMN avatar_url TEXT NOT NULL DEFAULT ''`); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func sqliteSchema() []string {
+	return []string{
 		`CREATE TABLE IF NOT EXISTS users (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			phone TEXT NOT NULL,
@@ -227,6 +323,7 @@ func migrate(db *sql.DB) error {
 		);`,
 		`CREATE TABLE IF NOT EXISTS orders (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			selected_master_id INTEGER REFERENCES masters(id),
 			title TEXT NOT NULL,
 			desc TEXT NOT NULL,
 			category TEXT NOT NULL,
@@ -238,6 +335,7 @@ func migrate(db *sql.DB) error {
 			views INTEGER NOT NULL DEFAULT 0,
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		);`,
+		`CREATE INDEX IF NOT EXISTS idx_orders_feed ON orders(district, created_at DESC);`,
 		`CREATE TABLE IF NOT EXISTS responses (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
@@ -245,6 +343,13 @@ func migrate(db *sql.DB) error {
 			price INTEGER NOT NULL,
 			comment TEXT NOT NULL,
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);`,
+		`CREATE TABLE IF NOT EXISTS chats (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+			master_id INTEGER NOT NULL REFERENCES masters(id),
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(order_id, master_id)
 		);`,
 		`CREATE TABLE IF NOT EXISTS messages (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -259,6 +364,12 @@ func migrate(db *sql.DB) error {
 			amount INTEGER NOT NULL,
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		);`,
+		`CREATE TABLE IF NOT EXISTS idempotency_keys (
+			key TEXT PRIMARY KEY,
+			response_body TEXT NOT NULL,
+			status_code INTEGER NOT NULL,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);`,
 		`CREATE TABLE IF NOT EXISTS verification_documents (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			master_profile_id INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
@@ -270,21 +381,135 @@ func migrate(db *sql.DB) error {
 			reviewed_at DATETIME
 		);`,
 	}
-	for _, stmt := range schema {
-		if _, err := db.Exec(stmt); err != nil {
-			return err
-		}
+}
+
+func postgresSchema() []string {
+	return []string{
+		`CREATE TABLE IF NOT EXISTS profiles (
+			id BIGSERIAL PRIMARY KEY,
+			role TEXT NOT NULL,
+			name TEXT NOT NULL,
+			phone TEXT NOT NULL,
+			city TEXT NOT NULL,
+			district TEXT NOT NULL DEFAULT '',
+			avatar_url TEXT NOT NULL DEFAULT '',
+			wallet_balance INTEGER NOT NULL DEFAULT 0,
+			is_verified INTEGER NOT NULL DEFAULT 0,
+			completed_jobs INTEGER NOT NULL DEFAULT 0
+		);`,
+		`CREATE TABLE IF NOT EXISTS users (
+			id BIGSERIAL PRIMARY KEY,
+			phone TEXT NOT NULL,
+			phone_norm TEXT NOT NULL,
+			role TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'active',
+			profile_id BIGINT NOT NULL REFERENCES profiles(id),
+			created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			last_login_at TIMESTAMPTZ
+		);`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_phone_role ON users(phone_norm, role);`,
+		`CREATE TABLE IF NOT EXISTS categories (
+			id BIGSERIAL PRIMARY KEY,
+			name TEXT NOT NULL,
+			icon TEXT NOT NULL,
+			theme TEXT NOT NULL
+		);`,
+		`CREATE TABLE IF NOT EXISTS masters (
+			id BIGSERIAL PRIMARY KEY,
+			name TEXT NOT NULL,
+			service TEXT NOT NULL,
+			rating DOUBLE PRECISION NOT NULL,
+			reviews INTEGER NOT NULL,
+			price TEXT NOT NULL,
+			verified INTEGER NOT NULL,
+			bio TEXT NOT NULL,
+			skills TEXT NOT NULL,
+			portfolio TEXT NOT NULL
+		);`,
+		`CREATE TABLE IF NOT EXISTS orders (
+			id BIGSERIAL PRIMARY KEY,
+			selected_master_id BIGINT REFERENCES masters(id),
+			title TEXT NOT NULL,
+			desc TEXT NOT NULL,
+			category TEXT NOT NULL,
+			district TEXT NOT NULL,
+			address TEXT NOT NULL,
+			budget TEXT NOT NULL,
+			when_label TEXT NOT NULL,
+			status TEXT NOT NULL,
+			views INTEGER NOT NULL DEFAULT 0,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_orders_feed ON orders(district, created_at DESC);`,
+		`CREATE TABLE IF NOT EXISTS responses (
+			id BIGSERIAL PRIMARY KEY,
+			order_id BIGINT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+			master_id BIGINT NOT NULL REFERENCES masters(id),
+			price INTEGER NOT NULL,
+			comment TEXT NOT NULL,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);`,
+		`CREATE TABLE IF NOT EXISTS chats (
+			id BIGSERIAL PRIMARY KEY,
+			order_id BIGINT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+			master_id BIGINT NOT NULL REFERENCES masters(id),
+			created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(order_id, master_id)
+		);`,
+		`CREATE TABLE IF NOT EXISTS messages (
+			id BIGSERIAL PRIMARY KEY,
+			chat_id BIGINT NOT NULL DEFAULT 1,
+			from_role TEXT NOT NULL,
+			text TEXT NOT NULL,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);`,
+		`CREATE TABLE IF NOT EXISTS transactions (
+			id BIGSERIAL PRIMARY KEY,
+			label TEXT NOT NULL,
+			amount INTEGER NOT NULL,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);`,
+		`CREATE TABLE IF NOT EXISTS idempotency_keys (
+			key TEXT PRIMARY KEY,
+			response_body TEXT NOT NULL,
+			status_code INTEGER NOT NULL,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);`,
+		`CREATE TABLE IF NOT EXISTS verification_documents (
+			id BIGSERIAL PRIMARY KEY,
+			master_profile_id BIGINT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+			document_type TEXT NOT NULL,
+			file_url TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'pending',
+			rejection_reason TEXT NOT NULL DEFAULT '',
+			created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			reviewed_at TIMESTAMPTZ
+		);`,
 	}
-	if err := ensureColumn(db, "profiles", "district", `ALTER TABLE profiles ADD COLUMN district TEXT NOT NULL DEFAULT ''`); err != nil {
-		return err
-	}
-	if err := ensureColumn(db, "profiles", "avatar_url", `ALTER TABLE profiles ADD COLUMN avatar_url TEXT NOT NULL DEFAULT ''`); err != nil {
-		return err
-	}
-	return nil
 }
 
 func ensureColumn(db *sql.DB, table, column, alterSQL string) error {
+	if activeSQLDriver == "postgres" {
+		var exists bool
+		err := db.QueryRow(`
+			SELECT EXISTS (
+				SELECT 1
+				FROM information_schema.columns
+				WHERE table_schema = current_schema()
+				  AND table_name = $1
+				  AND column_name = $2
+			)
+		`, table, column).Scan(&exists)
+		if err != nil {
+			return err
+		}
+		if exists {
+			return nil
+		}
+		_, err = db.Exec(alterSQL)
+		return err
+	}
 	rows, err := db.Query(`PRAGMA table_info(` + table + `)`)
 	if err != nil {
 		return err
@@ -313,7 +538,7 @@ func ensureColumn(db *sql.DB, table, column, alterSQL string) error {
 
 func seed(db *sql.DB) error {
 	var count int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM categories`).Scan(&count); err != nil {
+	if err := db.QueryRow(sqlf(`SELECT COUNT(*) FROM categories`)).Scan(&count); err != nil {
 		return err
 	}
 	if count > 0 {
@@ -330,7 +555,7 @@ func seed(db *sql.DB) error {
 		if err != nil {
 			return
 		}
-		_, err = tx.Exec(q, args...)
+		_, err = tx.Exec(sqlf(q), args...)
 	}
 
 	mustExec(`INSERT INTO profiles(role,name,phone,city,wallet_balance,is_verified,completed_jobs) VALUES
@@ -360,26 +585,60 @@ func seed(db *sql.DB) error {
 		mustExec(`INSERT INTO masters(name,service,rating,reviews,price,verified,bio,skills,portfolio) VALUES(?,?,?,?,?,?,?,?,?)`,
 			m.Name, m.Service, m.Rating, m.Reviews, m.Price, boolInt(m.Verified), m.Bio, strings.Join(m.Skills, ","), strings.Join(m.Portfolio, ","))
 	}
-
-	mustExec(`INSERT INTO orders(title,desc,category,district,address,budget,when_label,status,views,created_at) VALUES
-		('Починить кран на кухне','Течёт смеситель, нужна замена картриджа','Сантехника','Сино','ул. Рудаки 45','до 300 TJS','Сегодня','Активная',38,datetime('now','-2 hours')),
-		('Установить розетки','Нужно установить 4 двойные розетки в новой квартире','Электрика','Фирдавси','Нусратулло Махсум 12','200-400 TJS','Завтра','Новая',8,datetime('now','-12 minutes')),
-		('Собрать шкаф в спальне','Шкаф куплен, нужна аккуратная сборка','Мебель','Шохмансур','Айни 7','жду цену','На неделе','Выбор мастера',22,datetime('now','-1 day'));`)
-
-	mustExec(`INSERT INTO responses(order_id,master_id,price,comment,created_at) VALUES
-		(1,1,350,'Добрый день! Опыт 8 лет, гарантия 1 год. Могу приехать сегодня.',datetime('now','-90 minutes')),
-		(1,2,280,'Могу сегодня после 14:00. Все инструменты при себе.',datetime('now','-70 minutes')),
-		(1,3,320,'Качественно, гарантия 6 месяцев. Портфолио есть в профиле.',datetime('now','-45 minutes'));`)
-
-	mustExec(`INSERT INTO messages(chat_id,from_role,text,created_at) VALUES
-		(1,'master','Ассалому алейкум! Готов помочь с краном. Опыт 8 лет.',datetime('now','-35 minutes')),
-		(1,'customer','Здравствуйте. Сможете приехать сегодня?',datetime('now','-32 minutes')),
-		(1,'master','Да, после 17:00 буду свободен.',datetime('now','-30 minutes'));`)
-
-	mustExec(`INSERT INTO transactions(label,amount,created_at) VALUES
-		('Пополнение картой',100,datetime('now','-1 day')),
-		('Отклик: ремонт крана',-4,datetime('now','-2 hours')),
-		('Стартовый бонус',5,datetime('now','-3 days'));`)
+	now := time.Now()
+	ordersSeed := []Order{
+		{Title: "Починить кран на кухне", Desc: "Течёт смеситель, нужна замена картриджа", Category: "Сантехника", District: "Сино", Address: "ул. Рудаки 45", Budget: "до 300 TJS", When: "Сегодня", Status: "Активная", Views: 38, CreatedAt: now.Add(-2 * time.Hour).Format(time.RFC3339Nano)},
+		{Title: "Установить розетки", Desc: "Нужно установить 4 двойные розетки в новой квартире", Category: "Электрика", District: "Фирдавси", Address: "Нусратулло Махсум 12", Budget: "200-400 TJS", When: "Завтра", Status: "Новая", Views: 8, CreatedAt: now.Add(-12 * time.Minute).Format(time.RFC3339Nano)},
+		{Title: "Собрать шкаф в спальне", Desc: "Шкаф куплен, нужна аккуратная сборка", Category: "Мебель", District: "Шохмансур", Address: "Айни 7", Budget: "жду цену", When: "На неделе", Status: "Выбор мастера", Views: 22, CreatedAt: now.Add(-24 * time.Hour).Format(time.RFC3339Nano)},
+	}
+	for _, order := range ordersSeed {
+		mustExec(`INSERT INTO orders(title,desc,category,district,address,budget,when_label,status,views,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)`,
+			order.Title, order.Desc, order.Category, order.District, order.Address, order.Budget, order.When, order.Status, order.Views, order.CreatedAt)
+	}
+	responseSeeds := []struct {
+		orderID   int
+		masterID  int
+		price     int
+		comment   string
+		createdAt string
+	}{
+		{1, 1, 350, "Добрый день! Опыт 8 лет, гарантия 1 год. Могу приехать сегодня.", now.Add(-90 * time.Minute).Format(time.RFC3339Nano)},
+		{1, 2, 280, "Могу сегодня после 14:00. Все инструменты при себе.", now.Add(-70 * time.Minute).Format(time.RFC3339Nano)},
+		{1, 3, 320, "Качественно, гарантия 6 месяцев. Портфолио есть в профиле.", now.Add(-45 * time.Minute).Format(time.RFC3339Nano)},
+	}
+	for _, item := range responseSeeds {
+		mustExec(`INSERT INTO responses(order_id,master_id,price,comment,created_at) VALUES(?,?,?,?,?)`,
+			item.orderID, item.masterID, item.price, item.comment, item.createdAt)
+	}
+	mustExec(`INSERT INTO chats(id,order_id,master_id,created_at) VALUES(?,?,?,?)`,
+		1, 1, 1, now.Add(-35*time.Minute).Format(time.RFC3339Nano))
+	messageSeeds := []struct {
+		chatID    int
+		fromRole  string
+		text      string
+		createdAt string
+	}{
+		{1, "master", "Ассалому алейкум! Готов помочь с краном. Опыт 8 лет.", now.Add(-35 * time.Minute).Format(time.RFC3339Nano)},
+		{1, "customer", "Здравствуйте. Сможете приехать сегодня?", now.Add(-32 * time.Minute).Format(time.RFC3339Nano)},
+		{1, "master", "Да, после 17:00 буду свободен.", now.Add(-30 * time.Minute).Format(time.RFC3339Nano)},
+	}
+	for _, item := range messageSeeds {
+		mustExec(`INSERT INTO messages(chat_id,from_role,text,created_at) VALUES(?,?,?,?)`,
+			item.chatID, item.fromRole, item.text, item.createdAt)
+	}
+	transactionSeeds := []struct {
+		label     string
+		amount    int
+		createdAt string
+	}{
+		{"Пополнение картой", 100, now.Add(-24 * time.Hour).Format(time.RFC3339Nano)},
+		{"Отклик: ремонт крана", -4, now.Add(-2 * time.Hour).Format(time.RFC3339Nano)},
+		{"Стартовый бонус", 5, now.Add(-72 * time.Hour).Format(time.RFC3339Nano)},
+	}
+	for _, item := range transactionSeeds {
+		mustExec(`INSERT INTO transactions(label,amount,created_at) VALUES(?,?,?)`,
+			item.label, item.amount, item.createdAt)
+	}
 
 	if err != nil {
 		return err
@@ -388,26 +647,62 @@ func seed(db *sql.DB) error {
 }
 
 func ensureDemoUsers(db *sql.DB) error {
-	rows, err := db.Query(`SELECT id,role,phone FROM profiles`)
+	rows, err := db.Query(sqlf(`SELECT id,role,phone FROM profiles`))
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+
+	type demoProfile struct {
+		id    int
+		role  string
+		phone string
+	}
+	var profiles []demoProfile
 
 	for rows.Next() {
 		var profileID int
 		var role, phone string
 		if err := rows.Scan(&profileID, &role, &phone); err != nil {
+			rows.Close()
 			return err
 		}
-		if _, err := db.Exec(`INSERT INTO users(phone,phone_norm,role,status,profile_id)
+		profiles = append(profiles, demoProfile{id: profileID, role: role, phone: phone})
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	for _, profile := range profiles {
+		if _, err := db.Exec(sqlf(`INSERT INTO users(phone,phone_norm,role,status,profile_id)
 			VALUES(?,?,?,?,?)
-			ON CONFLICT(phone_norm,role) DO UPDATE SET phone=excluded.phone, profile_id=excluded.profile_id, updated_at=CURRENT_TIMESTAMP`,
-			phone, normalizePhone(phone), role, "active", profileID); err != nil {
+			ON CONFLICT(phone_norm,role) DO UPDATE SET phone=excluded.phone, profile_id=excluded.profile_id, updated_at=CURRENT_TIMESTAMP`),
+			profile.phone, normalizePhone(profile.phone), profile.role, "active", profile.id); err != nil {
 			return err
 		}
 	}
-	return rows.Err()
+	return nil
+}
+
+func ensureDemoChats(db *sql.DB) error {
+	var count int
+	if err := db.QueryRow(sqlf(`SELECT COUNT(*) FROM chats WHERE id=1`)).Scan(&count); err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+	var messageCount int
+	if err := db.QueryRow(sqlf(`SELECT COUNT(*) FROM messages WHERE chat_id=1`)).Scan(&messageCount); err != nil {
+		return err
+	}
+	if messageCount == 0 {
+		return nil
+	}
+	_, err := db.Exec(sqlf(`INSERT INTO chats(id,order_id,master_id,created_at) VALUES(?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(id) DO NOTHING`), 1, 1, 1)
+	return err
 }
 
 func (a *App) bootstrap(w http.ResponseWriter, r *http.Request) {
@@ -443,17 +738,29 @@ func (a *App) snapshot() Bootstrap {
 	}
 }
 
+// queryer is satisfied by both *sql.DB and *sql.Tx. Read helpers accept it so
+// they can be reused unchanged inside a transaction (to see uncommitted
+// writes made earlier in that same transaction) or against the pool directly.
+type queryer interface {
+	QueryRow(query string, args ...any) *sql.Row
+	Query(query string, args ...any) (*sql.Rows, error)
+}
+
 func (a *App) profile(role string) (Profile, error) {
+	return profileFrom(a.db, role)
+}
+
+func profileFrom(q queryer, role string) (Profile, error) {
 	var p Profile
 	var verified int
-	err := a.db.QueryRow(`SELECT id,role,name,phone,city,district,avatar_url,wallet_balance,is_verified,completed_jobs FROM profiles WHERE role=?`, role).
+	err := q.QueryRow(sqlf(`SELECT id,role,name,phone,city,district,avatar_url,wallet_balance,is_verified,completed_jobs FROM profiles WHERE role=?`), role).
 		Scan(&p.ID, &p.Role, &p.Name, &p.Phone, &p.City, &p.District, &p.AvatarURL, &p.WalletBalance, &verified, &p.CompletedJobs)
 	if err != nil {
 		return p, err
 	}
 	p.IsVerified = verified == 1
 	if role == "customer" {
-		_ = a.db.QueryRow(`SELECT COUNT(*) FROM orders`).Scan(&p.PublishedCount)
+		_ = q.QueryRow(sqlf(`SELECT COUNT(*) FROM orders`)).Scan(&p.PublishedCount)
 	}
 	return p, nil
 }
@@ -461,20 +768,20 @@ func (a *App) profile(role string) (Profile, error) {
 func (a *App) profileByID(id int) (Profile, error) {
 	var p Profile
 	var verified int
-	err := a.db.QueryRow(`SELECT id,role,name,phone,city,district,avatar_url,wallet_balance,is_verified,completed_jobs FROM profiles WHERE id=?`, id).
+	err := a.db.QueryRow(sqlf(`SELECT id,role,name,phone,city,district,avatar_url,wallet_balance,is_verified,completed_jobs FROM profiles WHERE id=?`), id).
 		Scan(&p.ID, &p.Role, &p.Name, &p.Phone, &p.City, &p.District, &p.AvatarURL, &p.WalletBalance, &verified, &p.CompletedJobs)
 	if err != nil {
 		return p, err
 	}
 	p.IsVerified = verified == 1
 	if p.Role == "customer" {
-		_ = a.db.QueryRow(`SELECT COUNT(*) FROM orders`).Scan(&p.PublishedCount)
+		_ = a.db.QueryRow(sqlf(`SELECT COUNT(*) FROM orders`)).Scan(&p.PublishedCount)
 	}
 	return p, nil
 }
 
 func (a *App) categories() []Category {
-	rows, err := a.db.Query(`SELECT id,name,icon,theme FROM categories ORDER BY id`)
+	rows, err := a.db.Query(sqlf(`SELECT id,name,icon,theme FROM categories ORDER BY id`))
 	if err != nil {
 		return nil
 	}
@@ -490,59 +797,39 @@ func (a *App) categories() []Category {
 }
 
 func (a *App) masters() []Master {
-	rows, err := a.db.Query(`SELECT id,name,service,rating,reviews,price,verified,bio,skills,portfolio FROM masters ORDER BY rating DESC`)
-	if err != nil {
-		return nil
-	}
-	defer rows.Close()
-	var items []Master
-	for rows.Next() {
-		var m Master
-		var verified int
-		var skills, portfolio string
-		if rows.Scan(&m.ID, &m.Name, &m.Service, &m.Rating, &m.Reviews, &m.Price, &verified, &m.Bio, &skills, &portfolio) == nil {
-			m.Verified = verified == 1
-			m.Skills = splitList(skills)
-			m.Portfolio = splitList(portfolio)
-			items = append(items, m)
-		}
-	}
-	return items
+	return a.queryMasters(MasterFilters{})
 }
 
 func (a *App) orders() []Order {
-	rows, err := a.db.Query(`SELECT o.id,o.title,o.desc,o.category,o.district,o.address,o.budget,o.when_label,o.status,o.views,o.created_at,COUNT(r.id)
-		FROM orders o LEFT JOIN responses r ON r.order_id=o.id
-		GROUP BY o.id ORDER BY o.created_at DESC`)
-	if err != nil {
-		return nil
-	}
-	defer rows.Close()
-	var items []Order
-	for rows.Next() {
-		var o Order
-		var created string
-		if rows.Scan(&o.ID, &o.Title, &o.Desc, &o.Category, &o.District, &o.Address, &o.Budget, &o.When, &o.Status, &o.Views, &created, &o.Responses) == nil {
-			o.CreatedAt = relativeTime(created)
-			items = append(items, o)
-		}
-	}
-	return items
+	return a.queryOrders(OrderFilters{})
 }
 
 func (a *App) orderByID(id int) (Order, bool) {
-	for _, order := range a.orders() {
-		if order.ID == id {
-			return order, true
-		}
+	return orderByIDFrom(a.db, id)
+}
+
+func orderByIDFrom(q queryer, id int) (Order, bool) {
+	row := q.QueryRow(sqlf(`SELECT o.id,o.selected_master_id,o.title,o.desc,o.category,o.district,o.address,o.budget,o.when_label,o.status,o.views,o.created_at,COUNT(r.id)
+		FROM orders o LEFT JOIN responses r ON r.order_id=o.id
+		WHERE o.id=?
+		GROUP BY o.id`), id)
+	var o Order
+	var selectedMasterID sql.NullInt64
+	var created string
+	if err := row.Scan(&o.ID, &selectedMasterID, &o.Title, &o.Desc, &o.Category, &o.District, &o.Address, &o.Budget, &o.When, &o.Status, &o.Views, &created, &o.Responses); err != nil {
+		return Order{}, false
 	}
-	return Order{}, false
+	if selectedMasterID.Valid {
+		o.SelectedMasterID = int(selectedMasterID.Int64)
+	}
+	o.CreatedAt = relativeTime(created)
+	return o, true
 }
 
 func (a *App) responsesForOrder(orderID int) []Response {
-	rows, err := a.db.Query(`SELECT r.id,r.order_id,r.master_id,m.name,printf('%.1f',m.rating),r.price,r.comment,r.created_at
+	rows, err := a.db.Query(sqlf(`SELECT r.id,r.order_id,r.master_id,m.name,m.rating,r.price,r.comment,r.created_at
 		FROM responses r JOIN masters m ON m.id=r.master_id
-		WHERE r.order_id=? ORDER BY r.created_at DESC`, orderID)
+		WHERE r.order_id=? ORDER BY r.created_at DESC`), orderID)
 	if err != nil {
 		return nil
 	}
@@ -550,8 +837,10 @@ func (a *App) responsesForOrder(orderID int) []Response {
 	var items []Response
 	for rows.Next() {
 		var item Response
+		var rating float64
 		var created string
-		if rows.Scan(&item.ID, &item.OrderID, &item.MasterID, &item.Master, &item.Rating, &item.Price, &item.Comment, &created) == nil {
+		if rows.Scan(&item.ID, &item.OrderID, &item.MasterID, &item.Master, &rating, &item.Price, &item.Comment, &created) == nil {
+			item.Rating = strconv.FormatFloat(rating, 'f', 1, 64)
 			item.CreatedAt = relativeTime(created)
 			items = append(items, item)
 		}
@@ -560,7 +849,7 @@ func (a *App) responsesForOrder(orderID int) []Response {
 }
 
 func (a *App) messagesForChat(chatID int) []Message {
-	rows, err := a.db.Query(`SELECT id,chat_id,from_role,text,created_at FROM messages WHERE chat_id=? ORDER BY created_at,id`, chatID)
+	rows, err := a.db.Query(sqlf(`SELECT id,chat_id,from_role,text,created_at FROM messages WHERE chat_id=? ORDER BY created_at,id`), chatID)
 	if err != nil {
 		return nil
 	}
@@ -578,7 +867,11 @@ func (a *App) messagesForChat(chatID int) []Message {
 }
 
 func (a *App) transactions() []Transaction {
-	rows, err := a.db.Query(`SELECT id,label,amount,created_at FROM transactions ORDER BY created_at DESC,id DESC LIMIT 20`)
+	return transactionsFrom(a.db)
+}
+
+func transactionsFrom(q queryer) []Transaction {
+	rows, err := q.Query(sqlf(`SELECT id,label,amount,created_at FROM transactions ORDER BY created_at DESC,id DESC LIMIT 20`))
 	if err != nil {
 		return nil
 	}
@@ -643,13 +936,6 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 			Code:    code,
 			Message: message,
 		},
-	})
-}
-
-func logRequests(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("%s %s", r.Method, r.URL.Path)
-		next.ServeHTTP(w, r)
 	})
 }
 

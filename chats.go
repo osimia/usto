@@ -115,15 +115,11 @@ func (a *App) createMessage(chatID int, req SendMessageRequest) (Message, error)
 	if role != "customer" && role != "master" {
 		return Message{}, errors.New("fromRole must be customer or master")
 	}
-	res, err := a.db.Exec(`INSERT INTO messages(chat_id,from_role,text) VALUES(?,?,?)`, chatID, role, text)
+	id, err := insertID(a.db, `INSERT INTO messages(chat_id,from_role,text) VALUES(?,?,?)`, chatID, role, text)
 	if err != nil {
 		return Message{}, err
 	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		return Message{}, err
-	}
-	message, ok := a.messageByID(int(id), chatID)
+	message, ok := a.messageByID(id, chatID)
 	if !ok {
 		return Message{}, errors.New("created message not found")
 	}
@@ -131,32 +127,86 @@ func (a *App) createMessage(chatID int, req SendMessageRequest) (Message, error)
 }
 
 func (a *App) chats() []Chat {
-	messages := a.messagesForChat(1)
-	last := Message{}
-	if len(messages) > 0 {
-		last = messages[len(messages)-1]
+	rows, err := a.db.Query(sqlf(`SELECT id,order_id,master_id FROM chats ORDER BY created_at DESC,id DESC`))
+	if err != nil {
+		return nil
 	}
-	order, _ := a.orderByID(1)
-	return []Chat{
-		{
-			ID:          1,
+	defer rows.Close()
+
+	customer, _ := a.profile("customer")
+	var items []Chat
+	for rows.Next() {
+		var chatID, orderID, masterID int
+		if err := rows.Scan(&chatID, &orderID, &masterID); err != nil {
+			continue
+		}
+		order, ok := a.orderByID(orderID)
+		if !ok {
+			continue
+		}
+		master, ok := a.masterByID(masterID)
+		if !ok {
+			continue
+		}
+		messages := a.messagesForChat(chatID)
+		last := Message{}
+		if len(messages) > 0 {
+			last = messages[len(messages)-1]
+		}
+		orderCopy := order
+		items = append(items, Chat{
+			ID:          chatID,
 			OrderID:     order.ID,
 			OrderTitle:  order.Title,
-			Customer:    "Акрам Осими",
-			Master:      "Фаррух Турсунов",
+			Customer:    customer.Name,
+			Master:      master.Name,
 			LastMessage: last.Text,
 			LastTime:    last.CreatedAt,
 			UnreadCount: 0,
-			Order:       &order,
-		},
+			Order:       &orderCopy,
+		})
 	}
+	return items
 }
 
 func (a *App) messageByID(id, chatID int) (Message, bool) {
-	for _, item := range a.messagesForChat(chatID) {
-		if item.ID == id {
-			return item, true
+	row := a.db.QueryRow(sqlf(`SELECT id,chat_id,from_role,text,created_at FROM messages WHERE id=? AND chat_id=?`), id, chatID)
+	var item Message
+	var created string
+	if err := row.Scan(&item.ID, &item.ChatID, &item.FromRole, &item.Text, &created); err != nil {
+		return Message{}, false
+	}
+	item.CreatedAt = clock(created)
+	return item, true
+}
+
+func (a *App) chatByOrderAndMaster(orderID, masterID int) (Chat, bool) {
+	for _, chat := range a.chats() {
+		if chat.OrderID == orderID && chat.Master == "" {
+			continue
+		}
+		if chat.OrderID == orderID {
+			master, ok := a.masterByID(masterID)
+			if ok && chat.Master == master.Name {
+				return chat, true
+			}
 		}
 	}
-	return Message{}, false
+	return Chat{}, false
+}
+
+func (a *App) ensureChat(orderID, masterID int) (Chat, error) {
+	if chat, ok := a.chatByOrderAndMaster(orderID, masterID); ok {
+		return chat, nil
+	}
+	id, err := insertID(a.db, `INSERT INTO chats(order_id,master_id) VALUES(?,?)`, orderID, masterID)
+	if err != nil {
+		return Chat{}, err
+	}
+	for _, chat := range a.chats() {
+		if chat.ID == id {
+			return chat, nil
+		}
+	}
+	return Chat{}, errors.New("created chat not found")
 }

@@ -5,16 +5,37 @@ import (
 	"time"
 )
 
+// authRateLimitedPaths are throttled per-IP to protect the SMS budget and
+// slow down account enumeration/brute-force attempts.
+var authRateLimitedPaths = map[string]bool{
+	"/api/auth/request-code": true,
+	"/api/auth/verify-code":  true,
+}
+
 func newHTTPServer(cfg Config, handler http.Handler) *http.Server {
+	// Burst of 3 immediately, then refills at 1 request per 10s per IP.
+	limiter := newIPRateLimiter(0.1, 3)
+
+	chain := rateLimitMW(limiter, authRateLimitedPaths)(handler)
+	chain = withCORS(chain)
+	chain = logRequests(chain)
+	chain = requestIDMW(chain)
+	chain = recoverMW(chain)
+
 	return &http.Server{
 		Addr:              cfg.addr(),
-		Handler:           logRequests(withCORS(handler)),
+		Handler:           chain,
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 }
 
 func (a *App) routes() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", a.healthz)
+	mux.HandleFunc("/api/health", a.healthz)
 	mux.HandleFunc("/api/auth/request-code", a.requestAuthCode)
 	mux.HandleFunc("/api/auth/verify-code", a.verifyAuthCode)
 	mux.HandleFunc("/api/auth/refresh", a.refreshAuthToken)
@@ -40,6 +61,22 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("/api/verification/documents", a.verificationDocumentsHandler)
 	mux.HandleFunc("/", staticHandler)
 	return mux
+}
+
+func (a *App) healthz(w http.ResponseWriter, r *http.Request) {
+	if !method(w, r, http.MethodGet) {
+		return
+	}
+
+	if err := a.db.PingContext(r.Context()); err != nil {
+		writeError(w, http.StatusServiceUnavailable, "db_unavailable", "database unavailable")
+		return
+	}
+
+	writeJSON(w, map[string]any{
+		"ok":  true,
+		"env": a.cfg.Env,
+	})
 }
 
 func withCORS(next http.Handler) http.Handler {

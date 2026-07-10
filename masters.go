@@ -65,17 +65,59 @@ func masterFiltersFromRequest(r *http.Request) MasterFilters {
 }
 
 func (a *App) filteredMasters(filters MasterFilters) []Master {
-	items := a.masters()
+	return a.queryMasters(filters)
+}
+
+// queryMasters pushes the service filter into SQL and caps with SQL LIMIT;
+// the free-text query filter still runs in Go, over a SQL-bounded window.
+func (a *App) queryMasters(filters MasterFilters) []Master {
+	query := `SELECT id,name,service,rating,reviews,price,verified,bio,skills,portfolio FROM masters`
+	var conditions []string
+	var args []any
+	if filters.Service != "" {
+		conditions = append(conditions, equalityCI("service"))
+		args = append(args, filters.Service)
+	}
+	if len(conditions) > 0 {
+		query += " WHERE " + strings.Join(conditions, " AND ")
+	}
+	query += " ORDER BY rating DESC"
+
+	switch {
+	case filters.Query != "":
+		query += " LIMIT 500"
+	case filters.Limit > 0:
+		query += " LIMIT ?"
+		args = append(args, filters.Limit)
+	}
+
+	rows, err := a.db.Query(sqlf(query), args...)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var items []Master
+	for rows.Next() {
+		var m Master
+		var verified int
+		var skills, portfolio string
+		if rows.Scan(&m.ID, &m.Name, &m.Service, &m.Rating, &m.Reviews, &m.Price, &verified, &m.Bio, &skills, &portfolio) == nil {
+			m.Verified = verified == 1
+			m.Skills = splitList(skills)
+			m.Portfolio = splitList(portfolio)
+			items = append(items, m)
+		}
+	}
+	if filters.Query == "" {
+		return items
+	}
 	filtered := make([]Master, 0, len(items))
 	for _, item := range items {
-		if filters.Service != "" && !strings.EqualFold(item.Service, filters.Service) {
-			continue
-		}
-		if filters.Query != "" && !masterMatchesQuery(item, filters.Query) {
+		if !masterMatchesQuery(item, filters.Query) {
 			continue
 		}
 		filtered = append(filtered, item)
-		if len(filtered) >= filters.Limit {
+		if filters.Limit > 0 && len(filtered) >= filters.Limit {
 			break
 		}
 	}
@@ -83,12 +125,17 @@ func (a *App) filteredMasters(filters MasterFilters) []Master {
 }
 
 func (a *App) masterByID(id int) (Master, bool) {
-	for _, master := range a.masters() {
-		if master.ID == id {
-			return master, true
-		}
+	row := a.db.QueryRow(sqlf(`SELECT id,name,service,rating,reviews,price,verified,bio,skills,portfolio FROM masters WHERE id=?`), id)
+	var m Master
+	var verified int
+	var skills, portfolio string
+	if err := row.Scan(&m.ID, &m.Name, &m.Service, &m.Rating, &m.Reviews, &m.Price, &verified, &m.Bio, &skills, &portfolio); err != nil {
+		return Master{}, false
 	}
-	return Master{}, false
+	m.Verified = verified == 1
+	m.Skills = splitList(skills)
+	m.Portfolio = splitList(portfolio)
+	return m, true
 }
 
 func masterMatchesQuery(master Master, query string) bool {
