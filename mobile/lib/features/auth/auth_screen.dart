@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../app/brand_assets.dart';
 import '../../core/api/api_client.dart';
@@ -44,19 +45,21 @@ class _AuthScreenState extends State<AuthScreen> {
   _AuthStep _step = _AuthStep.onboarding;
   int _page = 0;
   String _role = 'customer';
-  String _phoneDigits = '900112233';
+  String _phoneDigits = '';
   bool _loading = false;
   String? _error;
 
+  final _phone = TextEditingController();
   final _name = TextEditingController();
   String _city = kCities.first;
   String _district = kDistricts.first;
 
-  String get _phone => '+992$_phoneDigits';
+  String get _fullPhone => '+992$_phoneDigits';
 
   @override
   void dispose() {
     _pageController.dispose();
+    _phone.dispose();
     _name.dispose();
     super.dispose();
   }
@@ -74,7 +77,7 @@ class _AuthScreenState extends State<AuthScreen> {
     try {
       final res = await widget.apiClient.postJson(
         '/auth/login',
-        body: {'phone': _phone, 'role': _role},
+        body: {'phone': _fullPhone, 'role': _role},
       );
       if (!mounted) return;
       if (res['registrationRequired'] == true) {
@@ -101,7 +104,7 @@ class _AuthScreenState extends State<AuthScreen> {
       final res = await widget.apiClient.postJson(
         '/auth/login',
         body: {
-          'phone': _phone,
+          'phone': _fullPhone,
           'role': _role,
           'name': _name.text.trim(),
           'city': _city,
@@ -123,6 +126,7 @@ class _AuthScreenState extends State<AuthScreen> {
       _error = null;
       if (_phoneDigits.length < 9) {
         _phoneDigits += value;
+        _phone.text = _phoneDigits;
       }
     });
   }
@@ -132,6 +136,21 @@ class _AuthScreenState extends State<AuthScreen> {
       _error = null;
       if (_phoneDigits.isNotEmpty) {
         _phoneDigits = _phoneDigits.substring(0, _phoneDigits.length - 1);
+        _phone.text = _phoneDigits;
+      }
+    });
+  }
+
+  void _setPhoneDigits(String value) {
+    final digits = value.replaceAll(RegExp(r'\D'), '');
+    setState(() {
+      _error = null;
+      _phoneDigits = digits.length > 9 ? digits.substring(0, 9) : digits;
+      if (_phone.text != _phoneDigits) {
+        _phone.value = TextEditingValue(
+          text: _phoneDigits,
+          selection: TextSelection.collapsed(offset: _phoneDigits.length),
+        );
       }
     });
   }
@@ -355,7 +374,10 @@ class _AuthScreenState extends State<AuthScreen> {
                         ),
                       ),
                       const SizedBox(height: 16),
-                      _PhoneInputCard(phoneDigits: _phoneDigits),
+                      _PhoneInputCard(
+                        controller: _phone,
+                        onChanged: _setPhoneDigits,
+                      ),
                       const SizedBox(height: 14),
                       SegmentedButton<String>(
                         style: ButtonStyle(
@@ -476,7 +498,7 @@ class _AuthScreenState extends State<AuthScreen> {
                             ),
                           ),
                           Text(
-                            _phone,
+                            _fullPhone,
                             style: theme.textTheme.bodyMedium?.copyWith(
                               color: const Color(0xFF94A3B8),
                             ),

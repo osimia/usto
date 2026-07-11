@@ -394,7 +394,6 @@ func sqliteSchema() []string {
 			skills TEXT NOT NULL,
 			portfolio TEXT NOT NULL
 		);`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_masters_profile ON masters(profile_id);`,
 		`CREATE TABLE IF NOT EXISTS orders (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			customer_id INTEGER REFERENCES profiles(id),
@@ -533,7 +532,6 @@ func postgresSchema() []string {
 			skills TEXT NOT NULL,
 			portfolio TEXT NOT NULL
 		);`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_masters_profile ON masters(profile_id);`,
 		`CREATE TABLE IF NOT EXISTS orders (
 			id BIGSERIAL PRIMARY KEY,
 			customer_id BIGINT REFERENCES profiles(id),
