@@ -181,6 +181,29 @@ func masterMatchesQuery(master Master, query string) bool {
 	return strings.Contains(haystack, strings.ToLower(query))
 }
 
+// masterIDForProfile resolves a real master's directory row by their profile
+// ID, so responses/wallet code can attribute actions to the actual logged-in
+// master instead of a hardcoded demo ID.
+func (a *App) masterIDForProfile(profileID int) (int, bool) {
+	var id int
+	if err := a.db.QueryRow(sqlf(`SELECT id FROM masters WHERE profile_id=?`), profileID).Scan(&id); err != nil {
+		return 0, false
+	}
+	return id, true
+}
+
+// ensureMasterDirectoryEntry creates a blank, editable-later directory row
+// for a newly-registered master profile (or returns the existing one), so
+// every real master has somewhere for responses to attribute to and can
+// eventually appear in search once they fill in their details.
+func (a *App) ensureMasterDirectoryEntry(profileID int) (int, error) {
+	if id, ok := a.masterIDForProfile(profileID); ok {
+		return id, nil
+	}
+	return insertID(a.db, `INSERT INTO masters(name,service,rating,reviews,price,verified,bio,skills,portfolio,profile_id) VALUES(?,?,?,?,?,?,?,?,?,?)`,
+		"", "", 0, 0, "", 0, "", "", "", profileID)
+}
+
 func (a *App) masterReviews(masterID int) []MasterReview {
 	rows, err := a.db.Query(sqlf(`SELECT id,master_id,author_name,rating,text,created_at FROM master_reviews WHERE master_id=? ORDER BY created_at DESC,id DESC`), masterID)
 	if err != nil {

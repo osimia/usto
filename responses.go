@@ -40,6 +40,19 @@ func (a *App) orderResponsesHandler(w http.ResponseWriter, r *http.Request, orde
 		}
 		writeJSON(w, ResponsesResponse{Responses: a.responsesForOrder(orderID)})
 	case http.MethodPost:
+		_, profile, ok := a.currentUserProfile(w, r)
+		if !ok {
+			return
+		}
+		if profile.Role != "master" {
+			writeError(w, http.StatusForbidden, "forbidden", "only masters can respond to orders")
+			return
+		}
+		masterID, ok := a.masterIDForProfile(profile.ID)
+		if !ok {
+			writeError(w, http.StatusConflict, "master_profile_missing", "master directory entry not found")
+			return
+		}
 		var req CreateResponseRequest
 		if err := decode(r, &req); err != nil {
 			badRequest(w, err)
@@ -50,7 +63,7 @@ func (a *App) orderResponsesHandler(w http.ResponseWriter, r *http.Request, orde
 			return
 		}
 		req.OrderID = orderID
-		response, order, err := a.createResponse(req, key)
+		response, order, err := a.createResponse(req, key, masterID, profile.ID)
 		if err != nil {
 			if errors.Is(err, errInsufficientFunds) {
 				writeError(w, http.StatusPaymentRequired, "insufficient_funds", err.Error())
@@ -65,6 +78,10 @@ func (a *App) orderResponsesHandler(w http.ResponseWriter, r *http.Request, orde
 	}
 }
 
+// responses is the legacy, unauthenticated POST /api/responses endpoint kept
+// for the old web/ prototype, which never sends an Authorization header.
+// It preserves its historical behavior exactly: acting as the single demo
+// master, resolved via a real lookup instead of a hardcoded literal.
 func (a *App) responses(w http.ResponseWriter, r *http.Request) {
 	if !method(w, r, http.MethodPost) {
 		return
@@ -78,7 +95,17 @@ func (a *App) responses(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, err)
 		return
 	}
-	response, order, err := a.createResponse(req, key)
+	demoMaster, err := a.profile("master")
+	if err != nil {
+		serverError(w, err)
+		return
+	}
+	masterID, ok := a.masterIDForProfile(demoMaster.ID)
+	if !ok {
+		serverError(w, errors.New("demo master directory entry missing"))
+		return
+	}
+	response, order, err := a.createResponse(req, key, masterID, demoMaster.ID)
 	if err != nil {
 		if errors.Is(err, errInsufficientFunds) {
 			writeError(w, http.StatusPaymentRequired, "insufficient_funds", err.Error())
@@ -103,9 +130,13 @@ func (a *App) responses(w http.ResponseWriter, r *http.Request) {
 // the transaction all inside one DB transaction — either all three happen or
 // none do. The debit is guarded (wallet_balance >= fee in the same UPDATE),
 // so a too-low balance rolls back cleanly instead of ever going negative.
+// masterID (a masters-directory row) is who the response is attributed to;
+// masterProfileID is whose wallet gets debited — kept as two params because
+// a master's public directory listing and their own profile/wallet are
+// different rows linked by masters.profile_id.
 // idempotencyKey, if non-empty, makes a retry with the same key replay the
 // original result instead of debiting twice.
-func (a *App) createResponse(req CreateResponseRequest, idempotencyKey string) (Response, Order, error) {
+func (a *App) createResponse(req CreateResponseRequest, idempotencyKey string, masterID, masterProfileID int) (Response, Order, error) {
 	if req.OrderID <= 0 {
 		return Response{}, Order{}, errors.New("orderId is required")
 	}
@@ -126,8 +157,8 @@ func (a *App) createResponse(req CreateResponseRequest, idempotencyKey string) (
 	}
 	defer tx.Rollback()
 
-	debit, err := tx.Exec(sqlf(`UPDATE profiles SET wallet_balance = wallet_balance - ? WHERE role='master' AND wallet_balance >= ?`),
-		responseFeeTJS, responseFeeTJS)
+	debit, err := tx.Exec(sqlf(`UPDATE profiles SET wallet_balance = wallet_balance - ? WHERE id=? AND wallet_balance >= ?`),
+		responseFeeTJS, masterProfileID, responseFeeTJS)
 	if err != nil {
 		return Response{}, Order{}, err
 	}
@@ -139,11 +170,11 @@ func (a *App) createResponse(req CreateResponseRequest, idempotencyKey string) (
 		return Response{}, Order{}, errInsufficientFunds
 	}
 
-	id, err := insertID(tx, `INSERT INTO responses(order_id,master_id,price,comment) VALUES(?,?,?,?)`, req.OrderID, 1, req.Price, comment)
+	id, err := insertID(tx, `INSERT INTO responses(order_id,master_id,price,comment) VALUES(?,?,?,?)`, req.OrderID, masterID, req.Price, comment)
 	if err != nil {
 		return Response{}, Order{}, err
 	}
-	if _, err := tx.Exec(sqlf(`INSERT INTO transactions(label,amount) VALUES(?,?)`), "Отклик на заявку", -responseFeeTJS); err != nil {
+	if _, err := tx.Exec(sqlf(`INSERT INTO transactions(label,amount,profile_id) VALUES(?,?,?)`), "Отклик на заявку", -responseFeeTJS, masterProfileID); err != nil {
 		return Response{}, Order{}, err
 	}
 

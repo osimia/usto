@@ -152,6 +152,14 @@ curl -X POST -H 'Content-Type: application/json' \
   http://localhost:8080/api/auth/verify-code
 ```
 
+Тот же номер с `role=master` (или любой другой новый номер) выдаёт токен мастера — заявки/отклики/кошелёк/верификация ниже требуют токен нужной роли (заявку создаёт `customer`, откликается/пополняет кошелёк/проходит верификацию `master`):
+
+```bash
+curl -X POST -H 'Content-Type: application/json' \
+  --data '{"phone":"+992918445566","code":"1234","role":"master"}' \
+  http://localhost:8080/api/auth/verify-code
+```
+
 После получения `accessToken`:
 
 ```bash
@@ -164,16 +172,26 @@ curl -X PATCH -H "Authorization: Bearer <accessToken>" \
   http://localhost:8080/api/me/profile
 ```
 
-Проверка заказов:
+Проверка заказов (создание заявки и отклик требуют `Authorization`, т.к. привязаны к реальному профилю — см. п. "После получения accessToken" выше; отклик даёт токен роли `master`, заявку — роли `customer`):
 
 ```bash
 curl 'http://localhost:8080/api/orders?wrap=1&district=Сино'
 
 curl http://localhost:8080/api/orders/1
 
+# Заявки текущего пользователя (customer):
+curl -H "Authorization: Bearer <accessToken customer>" \
+  'http://localhost:8080/api/orders?mine=1&wrap=1'
+
+curl -X POST -H "Authorization: Bearer <accessToken customer>" \
+  -H 'Content-Type: application/json' \
+  --data '{"title":"Собрать мебель","category":"Мебель","district":"Сино"}' \
+  http://localhost:8080/api/orders
+
 curl http://localhost:8080/api/orders/1/responses
 
-curl -X POST -H 'Content-Type: application/json' \
+curl -X POST -H "Authorization: Bearer <accessToken master>" \
+  -H 'Content-Type: application/json' \
   --data '{"price":250,"comment":"Могу приехать сегодня после 17:00"}' \
   http://localhost:8080/api/orders/1/responses
 ```
@@ -190,14 +208,15 @@ curl -X POST -H 'Content-Type: application/json' \
   http://localhost:8080/api/chats/1/messages
 ```
 
-Проверка кошелька:
+Проверка кошелька (только для роли `master`, требует `Authorization` — кошелёк принадлежит авторизованному аккаунту, а не общему demo-профилю):
 
 ```bash
-curl http://localhost:8080/api/wallet
+curl -H "Authorization: Bearer <accessToken master>" http://localhost:8080/api/wallet
 
-curl http://localhost:8080/api/wallet/transactions
+curl -H "Authorization: Bearer <accessToken master>" http://localhost:8080/api/wallet/transactions
 
-curl -X POST -H 'Content-Type: application/json' \
+curl -X POST -H "Authorization: Bearer <accessToken master>" \
+  -H 'Content-Type: application/json' \
   --data '{"amount":100}' \
   'http://localhost:8080/api/wallet/topup?wrap=1'
 ```
@@ -218,16 +237,17 @@ curl 'http://localhost:8080/api/categories?wrap=1'
 curl http://localhost:8080/api/categories/1/services
 ```
 
-Проверка верификации:
+Проверка верификации (только для роли `master`, требует `Authorization`):
 
 ```bash
-curl http://localhost:8080/api/verification/status
+curl -H "Authorization: Bearer <accessToken master>" http://localhost:8080/api/verification/status
 
-curl -X POST -H 'Content-Type: application/json' \
+curl -X POST -H "Authorization: Bearer <accessToken master>" \
+  -H 'Content-Type: application/json' \
   --data '{"documentType":"passport","fileUrl":"https://example.com/passport.jpg"}' \
   http://localhost:8080/api/verification/documents
 
-curl -X POST 'http://localhost:8080/api/verification?wrap=1'
+curl -X POST -H "Authorization: Bearer <accessToken master>" 'http://localhost:8080/api/verification?wrap=1'
 ```
 
 ## Сборка exe для Windows

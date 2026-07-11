@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../app/brand_assets.dart';
 import '../../core/api/api_client.dart';
+import '../../core/constants.dart';
 
 class HomeShell extends StatefulWidget {
   const HomeShell({
@@ -1191,8 +1192,6 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
   String? _error;
   final List<String> _selectedTemplates = [];
 
-  static const _districts = ['Сино', 'Фирдавси', 'Шохмансур', 'Исмоили Сомони'];
-
   static const _whenOptions = [
     'Сегодня',
     'Завтра',
@@ -1582,7 +1581,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
           prefixIcon: Icon(Icons.location_on_outlined),
         ),
         items: [
-          for (final item in _districts)
+          for (final item in kDistricts)
             DropdownMenuItem(value: item, child: Text(item)),
         ],
         onChanged: (value) => setState(() => _district = value ?? _district),

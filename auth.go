@@ -12,19 +12,24 @@ import (
 	"time"
 )
 
-type AuthRequestCodeRequest struct {
-	Phone string `json:"phone"`
+type LoginRequest struct {
+	Phone    string `json:"phone"`
+	Role     string `json:"role"`
+	Name     string `json:"name"`
+	City     string `json:"city"`
+	District string `json:"district"`
 }
 
-type AuthRequestCodeResponse struct {
-	RequestID  string `json:"requestId"`
-	TTLSeconds int    `json:"ttlSeconds"`
-}
-
-type AuthVerifyCodeRequest struct {
-	Phone string `json:"phone"`
-	Code  string `json:"code"`
-	Role  string `json:"role"`
+// LoginResponse is either {registrationRequired: true} (first time this
+// phone+role logs in, and no name was supplied yet — client should collect
+// name/city/district and call /auth/login again) or the normal token+user
+// payload. Pointer User with omitempty keeps the JSON shape clean for
+// whichever case actually applies.
+type LoginResponse struct {
+	RegistrationRequired bool      `json:"registrationRequired,omitempty"`
+	AccessToken          string    `json:"accessToken,omitempty"`
+	RefreshToken         string    `json:"refreshToken,omitempty"`
+	User                 *AuthUser `json:"user,omitempty"`
 }
 
 type AuthRefreshRequest struct {
@@ -54,31 +59,20 @@ type tokenClaims struct {
 	IssuedAt  int64  `json:"iat"`
 }
 
-func (a *App) requestAuthCode(w http.ResponseWriter, r *http.Request) {
+// login is the single passwordless entry point: phone + role, no SMS code.
+// An existing (phone, role) account logs in immediately. A genuinely new one
+// must additionally supply name/city/district in the same call (client
+// collects these after a first response with registrationRequired=true) —
+// only then is the account actually created.
+//
+// Note: without a verification code, this does not prove ownership of the
+// phone number — anyone who knows an existing number can log in as it. This
+// is an explicit, temporary simplification, not an oversight.
+func (a *App) login(w http.ResponseWriter, r *http.Request) {
 	if !method(w, r, http.MethodPost) {
 		return
 	}
-	var req AuthRequestCodeRequest
-	if err := decode(r, &req); err != nil {
-		badRequest(w, err)
-		return
-	}
-	phone := normalizePhone(req.Phone)
-	if len(phone) < 9 {
-		badRequest(w, errors.New("phone is required"))
-		return
-	}
-	writeJSON(w, AuthRequestCodeResponse{
-		RequestID:  "dev-" + phone,
-		TTLSeconds: 120,
-	})
-}
-
-func (a *App) verifyAuthCode(w http.ResponseWriter, r *http.Request) {
-	if !method(w, r, http.MethodPost) {
-		return
-	}
-	var req AuthVerifyCodeRequest
+	var req LoginRequest
 	if err := decode(r, &req); err != nil {
 		badRequest(w, err)
 		return
@@ -93,14 +87,14 @@ func (a *App) verifyAuthCode(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, errors.New("phone is required"))
 		return
 	}
-	if strings.TrimSpace(req.Code) != a.cfg.DevSMSCode {
-		writeError(w, http.StatusUnauthorized, "invalid_code", "invalid SMS code")
+
+	user, registrationRequired, err := a.loginOrRegister(req.Phone, phoneNorm, role, req.Name, req.City, req.District)
+	if err != nil {
+		badRequest(w, err)
 		return
 	}
-
-	user, err := a.ensureUserForAuth(req.Phone, phoneNorm, role)
-	if err != nil {
-		serverError(w, err)
+	if registrationRequired {
+		writeJSON(w, LoginResponse{RegistrationRequired: true})
 		return
 	}
 
@@ -109,7 +103,11 @@ func (a *App) verifyAuthCode(w http.ResponseWriter, r *http.Request) {
 		serverError(w, err)
 		return
 	}
-	writeJSON(w, auth)
+	writeJSON(w, LoginResponse{
+		AccessToken:  auth.AccessToken,
+		RefreshToken: auth.RefreshToken,
+		User:         &auth.User,
+	})
 }
 
 func (a *App) refreshAuthToken(w http.ResponseWriter, r *http.Request) {
@@ -176,22 +174,54 @@ func authUserFromUserProfile(user User, p Profile) AuthUser {
 	}
 }
 
-func (a *App) ensureUserForAuth(phone, phoneNorm, role string) (User, error) {
+// loginOrRegister returns the existing user for this (phone, role) if one
+// exists (registrationRequired=false). Otherwise, if name is blank, it
+// creates nothing and asks the caller to collect registration details
+// (registrationRequired=true); if name is provided, it creates a brand-new
+// profile (+ a masters directory entry for masters) and the user pointing at
+// it, in the same call. The two seeded demo accounts already have users rows
+// (see ensureDemoUsers), so the "create" path only ever runs for real,
+// distinct accounts, never for the demo login.
+func (a *App) loginOrRegister(phone, phoneNorm, role, name, city, district string) (User, bool, error) {
 	if user, err := a.userByPhoneRole(phoneNorm, role); err == nil {
 		_, _ = a.db.Exec(sqlf(`UPDATE users SET last_login_at=CURRENT_TIMESTAMP WHERE id=?`), user.ID)
-		return user, nil
+		return user, false, nil
 	}
 
-	p, err := a.profile(role)
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return User{}, true, nil
+	}
+	city = strings.TrimSpace(city)
+	district = strings.TrimSpace(district)
+	if city == "" {
+		return User{}, false, errors.New("city is required")
+	}
+	if district == "" {
+		return User{}, false, errors.New("district is required")
+	}
+
+	profileID, err := a.createProfileForNewUser(role, phone, name, city, district)
 	if err != nil {
-		return User{}, err
+		return User{}, false, err
+	}
+	if role == "master" {
+		if _, err := a.ensureMasterDirectoryEntry(profileID); err != nil {
+			return User{}, false, err
+		}
 	}
 	id, err := insertID(a.db, `INSERT INTO users(phone,phone_norm,role,status,profile_id,last_login_at) VALUES(?,?,?,?,?,CURRENT_TIMESTAMP)`,
-		strings.TrimSpace(phone), phoneNorm, role, "active", p.ID)
+		strings.TrimSpace(phone), phoneNorm, role, "active", profileID)
 	if err != nil {
-		return User{}, err
+		return User{}, false, err
 	}
-	return a.userByID(id)
+	user, err := a.userByID(id)
+	return user, false, err
+}
+
+func (a *App) createProfileForNewUser(role, phone, name, city, district string) (int, error) {
+	return insertID(a.db, `INSERT INTO profiles(role,name,phone,city,district,wallet_balance,is_verified,completed_jobs) VALUES(?,?,?,?,?,0,0,0)`,
+		role, name, strings.TrimSpace(phone), city, district)
 }
 
 func (a *App) userByPhoneRole(phoneNorm, role string) (User, error) {

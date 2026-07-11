@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../app/brand_assets.dart';
 import '../../core/api/api_client.dart';
+import '../../core/constants.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({
@@ -17,7 +18,7 @@ class AuthScreen extends StatefulWidget {
   State<AuthScreen> createState() => _AuthScreenState();
 }
 
-enum _AuthStep { onboarding, phone, code }
+enum _AuthStep { onboarding, phone, details }
 
 class _AuthScreenState extends State<AuthScreen> {
   final _pageController = PageController();
@@ -44,34 +45,43 @@ class _AuthScreenState extends State<AuthScreen> {
   int _page = 0;
   String _role = 'customer';
   String _phoneDigits = '900112233';
-  String _codeDigits = '';
   bool _loading = false;
   String? _error;
+
+  final _name = TextEditingController();
+  String _city = kCities.first;
+  String _district = kDistricts.first;
 
   String get _phone => '+992$_phoneDigits';
 
   @override
   void dispose() {
     _pageController.dispose();
+    _name.dispose();
     super.dispose();
   }
 
-  Future<void> _requestCode() async {
+  // Tries to log in with just phone+role. An existing account signs in
+  // immediately; a brand-new one is told registrationRequired and moves to
+  // the details step to collect name/city/district before an account is
+  // actually created.
+  Future<void> _login() async {
     if (_phoneDigits.length < 9) return;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      await widget.apiClient.postJson(
-        '/auth/request-code',
-        body: {'phone': _phone},
+      final res = await widget.apiClient.postJson(
+        '/auth/login',
+        body: {'phone': _phone, 'role': _role},
       );
       if (!mounted) return;
-      setState(() {
-        _step = _AuthStep.code;
-        _codeDigits = '';
-      });
+      if (res['registrationRequired'] == true) {
+        setState(() => _step = _AuthStep.details);
+      } else {
+        widget.onSignedIn(res);
+      }
     } on ApiException catch (error) {
       setState(() => _error = error.message);
     } finally {
@@ -81,18 +91,24 @@ class _AuthScreenState extends State<AuthScreen> {
     }
   }
 
-  Future<void> _verifyCode() async {
-    if (_codeDigits.length < 4) return;
+  Future<void> _completeRegistration() async {
+    if (_name.text.trim().isEmpty) return;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final auth = await widget.apiClient.postJson(
-        '/auth/verify-code',
-        body: {'phone': _phone, 'code': _codeDigits, 'role': _role},
+      final res = await widget.apiClient.postJson(
+        '/auth/login',
+        body: {
+          'phone': _phone,
+          'role': _role,
+          'name': _name.text.trim(),
+          'city': _city,
+          'district': _district,
+        },
       );
-      widget.onSignedIn(auth);
+      widget.onSignedIn(res);
     } on ApiException catch (error) {
       setState(() => _error = error.message);
     } finally {
@@ -105,14 +121,8 @@ class _AuthScreenState extends State<AuthScreen> {
   void _appendDigit(String value) {
     setState(() {
       _error = null;
-      if (_step == _AuthStep.phone) {
-        if (_phoneDigits.length < 9) {
-          _phoneDigits += value;
-        }
-      } else if (_step == _AuthStep.code) {
-        if (_codeDigits.length < 4) {
-          _codeDigits += value;
-        }
+      if (_phoneDigits.length < 9) {
+        _phoneDigits += value;
       }
     });
   }
@@ -120,10 +130,8 @@ class _AuthScreenState extends State<AuthScreen> {
   void _removeDigit() {
     setState(() {
       _error = null;
-      if (_step == _AuthStep.phone && _phoneDigits.isNotEmpty) {
+      if (_phoneDigits.isNotEmpty) {
         _phoneDigits = _phoneDigits.substring(0, _phoneDigits.length - 1);
-      } else if (_step == _AuthStep.code && _codeDigits.isNotEmpty) {
-        _codeDigits = _codeDigits.substring(0, _codeDigits.length - 1);
       }
     });
   }
@@ -142,8 +150,8 @@ class _AuthScreenState extends State<AuthScreen> {
         return _buildOnboarding(context);
       case _AuthStep.phone:
         return _buildPhone(context);
-      case _AuthStep.code:
-        return _buildCode(context);
+      case _AuthStep.details:
+        return _buildDetails(context);
     }
   }
 
@@ -398,8 +406,8 @@ class _AuthScreenState extends State<AuthScreen> {
                   ),
                   onPressed: _loading || _phoneDigits.length != 9
                       ? null
-                      : _requestCode,
-                  child: Text(_loading ? 'Отправляем...' : 'Получить SMS-код'),
+                      : _login,
+                  child: Text(_loading ? 'Входим...' : 'Войти'),
                 ),
                 const SizedBox(height: 14),
                 Text.rich(
@@ -430,7 +438,7 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
-  Widget _buildCode(BuildContext context) {
+  Widget _buildDetails(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
       backgroundColor: const Color(0xFFF6F8FC),
@@ -460,7 +468,7 @@ class _AuthScreenState extends State<AuthScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Подтверждение входа',
+                            'Заполните профиль',
                             style: theme.textTheme.titleLarge?.copyWith(
                               fontWeight: FontWeight.w800,
                               color: const Color(0xFF1F2940),
@@ -479,60 +487,91 @@ class _AuthScreenState extends State<AuthScreen> {
                   ],
                 ),
                 const SizedBox(height: 14),
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(24),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Color(0x120F172A),
-                        blurRadius: 24,
-                        offset: Offset(0, 12),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Введите SMS-код',
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          color: const Color(0xFF1F2940),
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Для демо используйте код 1234',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: const Color(0xFF64748B),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Row(
-                        children: [
-                          for (var i = 0; i < 4; i++) ...[
-                            Expanded(
-                              child: _CodeCell(
-                                value: i < _codeDigits.length
-                                    ? _codeDigits[i]
-                                    : '',
-                              ),
-                            ),
-                            if (i != 3) const SizedBox(width: 10),
-                          ],
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(24),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x120F172A),
+                            blurRadius: 24,
+                            offset: Offset(0, 12),
+                          ),
                         ],
                       ),
-                      const SizedBox(height: 10),
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: TextButton(
-                          onPressed: _loading ? null : _requestCode,
-                          child: const Text('Отправить код повторно'),
-                        ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Это первый вход с этого номера',
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              color: const Color(0xFF1F2940),
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Укажите ФИО и адрес, чтобы создать аккаунт',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: const Color(0xFF64748B),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          TextField(
+                            controller: _name,
+                            textCapitalization: TextCapitalization.words,
+                            decoration: const InputDecoration(
+                              labelText: 'ФИО',
+                              border: OutlineInputBorder(),
+                            ),
+                            onChanged: (_) => setState(() => _error = null),
+                          ),
+                          const SizedBox(height: 14),
+                          DropdownButtonFormField<String>(
+                            initialValue: _city,
+                            decoration: const InputDecoration(
+                              labelText: 'Город',
+                              border: OutlineInputBorder(),
+                            ),
+                            items: [
+                              for (final city in kCities)
+                                DropdownMenuItem(
+                                  value: city,
+                                  child: Text(city),
+                                ),
+                            ],
+                            onChanged: (value) {
+                              if (value != null) {
+                                setState(() => _city = value);
+                              }
+                            },
+                          ),
+                          const SizedBox(height: 14),
+                          DropdownButtonFormField<String>(
+                            initialValue: _district,
+                            decoration: const InputDecoration(
+                              labelText: 'Район',
+                              border: OutlineInputBorder(),
+                            ),
+                            items: [
+                              for (final district in kDistricts)
+                                DropdownMenuItem(
+                                  value: district,
+                                  child: Text(district),
+                                ),
+                            ],
+                            onChanged: (value) {
+                              if (value != null) {
+                                setState(() => _district = value);
+                              }
+                            },
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
                 ),
                 const SizedBox(height: 10),
@@ -540,13 +579,6 @@ class _AuthScreenState extends State<AuthScreen> {
                   _AuthErrorBanner(message: _error!),
                   const SizedBox(height: 12),
                 ],
-                Expanded(
-                  child: _AuthKeyboard(
-                    onDigit: _appendDigit,
-                    onBackspace: _removeDigit,
-                  ),
-                ),
-                const SizedBox(height: 12),
                 FilledButton(
                   style: FilledButton.styleFrom(
                     backgroundColor: const Color(0xFF2B5DE0),
@@ -554,10 +586,10 @@ class _AuthScreenState extends State<AuthScreen> {
                     disabledBackgroundColor: const Color(0xFFD0D9E8),
                     minimumSize: const Size.fromHeight(52),
                   ),
-                  onPressed: _loading || _codeDigits.length != 4
+                  onPressed: _loading || _name.text.trim().isEmpty
                       ? null
-                      : _verifyCode,
-                  child: Text(_loading ? 'Проверяем...' : 'Войти'),
+                      : _completeRegistration,
+                  child: Text(_loading ? 'Создаём аккаунт...' : 'Продолжить'),
                 ),
               ],
             ),
@@ -712,38 +744,6 @@ class _AuthErrorBanner extends StatelessWidget {
           color: Color(0xFFB91C1C),
           fontWeight: FontWeight.w600,
           height: 1.35,
-        ),
-      ),
-    );
-  }
-}
-
-class _CodeCell extends StatelessWidget {
-  const _CodeCell({required this.value});
-
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 64,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: value.isEmpty
-              ? const Color(0xFFD9E2F2)
-              : const Color(0xFF2B5DE0),
-          width: 1.4,
-        ),
-      ),
-      child: Text(
-        value.isEmpty ? '•' : value,
-        style: const TextStyle(
-          fontSize: 22,
-          fontWeight: FontWeight.w800,
-          color: Color(0xFF1F2940),
         ),
       ),
     );

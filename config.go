@@ -15,7 +15,6 @@ type Config struct {
 	DatabaseURL       string
 	DBPath            string
 	JWTSecret         string
-	DevSMSCode        string
 	AccessTokenHours  int
 	RefreshTokenHours int
 	PprofAddr         string
@@ -30,7 +29,6 @@ func loadConfig() Config {
 		DatabaseURL:       env("DATABASE_URL", ""),
 		DBPath:            env("DB_PATH", "usto.db"),
 		JWTSecret:         env("JWT_SECRET", "dev-secret-change-me"),
-		DevSMSCode:        env("DEV_SMS_CODE", "1234"),
 		AccessTokenHours:  envInt("ACCESS_TOKEN_HOURS", 24),
 		RefreshTokenHours: envInt("REFRESH_TOKEN_HOURS", 720),
 		PprofAddr:         env("PPROF_ADDR", ""),

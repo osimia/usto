@@ -5,11 +5,12 @@ import (
 	"time"
 )
 
-// authRateLimitedPaths are throttled per-IP to protect the SMS budget and
-// slow down account enumeration/brute-force attempts.
+// authRateLimitedPaths are throttled per-IP to slow down account
+// enumeration/brute-force attempts. This matters even more now that login
+// has no SMS code step — the rate limit is the only friction against
+// guessing phone numbers.
 var authRateLimitedPaths = map[string]bool{
-	"/api/auth/request-code": true,
-	"/api/auth/verify-code":  true,
+	"/api/auth/login": true,
 }
 
 func newHTTPServer(cfg Config, handler http.Handler) *http.Server {
@@ -36,8 +37,7 @@ func (a *App) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", a.healthz)
 	mux.HandleFunc("/api/health", a.healthz)
-	mux.HandleFunc("/api/auth/request-code", a.requestAuthCode)
-	mux.HandleFunc("/api/auth/verify-code", a.verifyAuthCode)
+	mux.HandleFunc("/api/auth/login", a.login)
 	mux.HandleFunc("/api/auth/refresh", a.refreshAuthToken)
 	mux.HandleFunc("/api/auth/logout", a.logout)
 	mux.HandleFunc("/api/me", a.me)

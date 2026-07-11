@@ -59,6 +59,7 @@ type MasterReview struct {
 
 type Order struct {
 	ID                int    `json:"id"`
+	CustomerID        int    `json:"customerId,omitempty"`
 	SelectedMasterID  int    `json:"selectedMasterId,omitempty"`
 	PreferredMasterID int    `json:"preferredMasterId,omitempty"`
 	Title             string `json:"title"`
@@ -280,10 +281,19 @@ func migrate(db *sql.DB) error {
 		if err := ensureColumn(db, "orders", "preferred_master_id", `ALTER TABLE orders ADD COLUMN preferred_master_id INTEGER REFERENCES masters(id)`); err != nil {
 			return err
 		}
+		if err := ensureColumn(db, "orders", "customer_id", `ALTER TABLE orders ADD COLUMN customer_id INTEGER REFERENCES profiles(id)`); err != nil {
+			return err
+		}
 		if err := ensureColumn(db, "profiles", "district", `ALTER TABLE profiles ADD COLUMN district TEXT NOT NULL DEFAULT ''`); err != nil {
 			return err
 		}
 		if err := ensureColumn(db, "profiles", "avatar_url", `ALTER TABLE profiles ADD COLUMN avatar_url TEXT NOT NULL DEFAULT ''`); err != nil {
+			return err
+		}
+		if err := ensureColumn(db, "masters", "profile_id", `ALTER TABLE masters ADD COLUMN profile_id INTEGER REFERENCES profiles(id)`); err != nil {
+			return err
+		}
+		if err := ensureColumn(db, "transactions", "profile_id", `ALTER TABLE transactions ADD COLUMN profile_id INTEGER REFERENCES profiles(id)`); err != nil {
 			return err
 		}
 	} else if activeSQLDriver == "postgres" {
@@ -293,6 +303,21 @@ func migrate(db *sql.DB) error {
 		if err := ensureColumn(db, "orders", "preferred_master_id", `ALTER TABLE orders ADD COLUMN preferred_master_id BIGINT REFERENCES masters(id)`); err != nil {
 			return err
 		}
+		if err := ensureColumn(db, "orders", "customer_id", `ALTER TABLE orders ADD COLUMN customer_id BIGINT REFERENCES profiles(id)`); err != nil {
+			return err
+		}
+		if err := ensureColumn(db, "masters", "profile_id", `ALTER TABLE masters ADD COLUMN profile_id BIGINT REFERENCES profiles(id)`); err != nil {
+			return err
+		}
+		if err := ensureColumn(db, "transactions", "profile_id", `ALTER TABLE transactions ADD COLUMN profile_id BIGINT REFERENCES profiles(id)`); err != nil {
+			return err
+		}
+	}
+	// idx_masters_profile is created in the CREATE TABLE path above for fresh
+	// databases; for pre-existing ones the ensureColumn calls just added the
+	// column, so the unique index needs to be created here too.
+	if _, err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_masters_profile ON masters(profile_id);`); err != nil {
+		return err
 	}
 	return nil
 }
@@ -331,6 +356,7 @@ func sqliteSchema() []string {
 		);`,
 		`CREATE TABLE IF NOT EXISTS masters (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			profile_id INTEGER REFERENCES profiles(id),
 			name TEXT NOT NULL,
 			service TEXT NOT NULL,
 			rating REAL NOT NULL,
@@ -341,8 +367,10 @@ func sqliteSchema() []string {
 			skills TEXT NOT NULL,
 			portfolio TEXT NOT NULL
 		);`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_masters_profile ON masters(profile_id);`,
 		`CREATE TABLE IF NOT EXISTS orders (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			customer_id INTEGER REFERENCES profiles(id),
 			selected_master_id INTEGER REFERENCES masters(id),
 			preferred_master_id INTEGER REFERENCES masters(id),
 			title TEXT NOT NULL,
@@ -381,6 +409,7 @@ func sqliteSchema() []string {
 		);`,
 		`CREATE TABLE IF NOT EXISTS transactions (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			profile_id INTEGER REFERENCES profiles(id),
 			label TEXT NOT NULL,
 			amount INTEGER NOT NULL,
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -446,6 +475,7 @@ func postgresSchema() []string {
 		);`,
 		`CREATE TABLE IF NOT EXISTS masters (
 			id BIGSERIAL PRIMARY KEY,
+			profile_id BIGINT REFERENCES profiles(id),
 			name TEXT NOT NULL,
 			service TEXT NOT NULL,
 			rating DOUBLE PRECISION NOT NULL,
@@ -456,8 +486,10 @@ func postgresSchema() []string {
 			skills TEXT NOT NULL,
 			portfolio TEXT NOT NULL
 		);`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_masters_profile ON masters(profile_id);`,
 		`CREATE TABLE IF NOT EXISTS orders (
 			id BIGSERIAL PRIMARY KEY,
+			customer_id BIGINT REFERENCES profiles(id),
 			selected_master_id BIGINT REFERENCES masters(id),
 			preferred_master_id BIGINT REFERENCES masters(id),
 			title TEXT NOT NULL,
@@ -496,6 +528,7 @@ func postgresSchema() []string {
 		);`,
 		`CREATE TABLE IF NOT EXISTS transactions (
 			id BIGSERIAL PRIMARY KEY,
+			profile_id BIGINT REFERENCES profiles(id),
 			label TEXT NOT NULL,
 			amount INTEGER NOT NULL,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -623,6 +656,11 @@ func seed(db *sql.DB) error {
 		mustExec(`INSERT INTO masters(name,service,rating,reviews,price,verified,bio,skills,portfolio) VALUES(?,?,?,?,?,?,?,?,?)`,
 			m.Name, m.Service, m.Rating, m.Reviews, m.Price, boolInt(m.Verified), m.Bio, strings.Join(m.Skills, ","), strings.Join(m.Portfolio, ","))
 	}
+	// Link the demo master directory row to the demo master profile, so the
+	// existing single-tenant demo flow keeps working unchanged now that
+	// responses/wallet resolve master identity through this link instead of
+	// hardcoded IDs.
+	mustExec(`UPDATE masters SET profile_id=(SELECT id FROM profiles WHERE role='master' LIMIT 1) WHERE name=?`, "Фаррух Турсунов")
 	now := time.Now()
 	ordersSeed := []Order{
 		{Title: "Починить кран на кухне", Desc: "Течёт смеситель, нужна замена картриджа", Category: "Сантехника", District: "Сино", Address: "ул. Рудаки 45", Budget: "до 300 TJS", When: "Сегодня", Status: "Активная", Views: 38, CreatedAt: now.Add(-2 * time.Hour).Format(time.RFC3339Nano)},
@@ -630,7 +668,7 @@ func seed(db *sql.DB) error {
 		{Title: "Собрать шкаф в спальне", Desc: "Шкаф куплен, нужна аккуратная сборка", Category: "Мебель", District: "Шохмансур", Address: "Айни 7", Budget: "жду цену", When: "На неделе", Status: "Выбор мастера", Views: 22, CreatedAt: now.Add(-24 * time.Hour).Format(time.RFC3339Nano)},
 	}
 	for _, order := range ordersSeed {
-		mustExec(`INSERT INTO orders(title,"desc",category,district,address,budget,when_label,status,views,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)`,
+		mustExec(`INSERT INTO orders(title,"desc",category,district,address,budget,when_label,status,views,created_at,customer_id) VALUES(?,?,?,?,?,?,?,?,?,?,(SELECT id FROM profiles WHERE role='customer' LIMIT 1))`,
 			order.Title, order.Desc, order.Category, order.District, order.Address, order.Budget, order.When, order.Status, order.Views, order.CreatedAt)
 	}
 	responseSeeds := []struct {
@@ -674,7 +712,7 @@ func seed(db *sql.DB) error {
 		{"Стартовый бонус", 5, now.Add(-72 * time.Hour).Format(time.RFC3339Nano)},
 	}
 	for _, item := range transactionSeeds {
-		mustExec(`INSERT INTO transactions(label,amount,created_at) VALUES(?,?,?)`,
+		mustExec(`INSERT INTO transactions(label,amount,created_at,profile_id) VALUES(?,?,?,(SELECT id FROM profiles WHERE role='master' LIMIT 1))`,
 			item.label, item.amount, item.createdAt)
 	}
 	reviewSeeds := []struct {
@@ -774,7 +812,7 @@ func (a *App) bootstrap(w http.ResponseWriter, r *http.Request) {
 		Orders:       a.orders(),
 		Responses:    a.responsesForOrder(1),
 		Messages:     a.messagesForChat(1),
-		Transactions: a.transactions(),
+		Transactions: transactionsFrom(a.db, master.ID),
 	})
 }
 
@@ -789,7 +827,7 @@ func (a *App) snapshot() Bootstrap {
 		Orders:       a.orders(),
 		Responses:    a.responsesForOrder(1),
 		Messages:     a.messagesForChat(1),
-		Transactions: a.transactions(),
+		Transactions: transactionsFrom(a.db, master.ID),
 	}
 }
 
@@ -815,22 +853,26 @@ func profileFrom(q queryer, role string) (Profile, error) {
 	}
 	p.IsVerified = verified == 1
 	if role == "customer" {
-		_ = q.QueryRow(sqlf(`SELECT COUNT(*) FROM orders`)).Scan(&p.PublishedCount)
+		_ = q.QueryRow(sqlf(`SELECT COUNT(*) FROM orders WHERE customer_id=?`), p.ID).Scan(&p.PublishedCount)
 	}
 	return p, nil
 }
 
 func (a *App) profileByID(id int) (Profile, error) {
+	return profileByIDFrom(a.db, id)
+}
+
+func profileByIDFrom(q queryer, id int) (Profile, error) {
 	var p Profile
 	var verified int
-	err := a.db.QueryRow(sqlf(`SELECT id,role,name,phone,city,district,avatar_url,wallet_balance,is_verified,completed_jobs FROM profiles WHERE id=?`), id).
+	err := q.QueryRow(sqlf(`SELECT id,role,name,phone,city,district,avatar_url,wallet_balance,is_verified,completed_jobs FROM profiles WHERE id=?`), id).
 		Scan(&p.ID, &p.Role, &p.Name, &p.Phone, &p.City, &p.District, &p.AvatarURL, &p.WalletBalance, &verified, &p.CompletedJobs)
 	if err != nil {
 		return p, err
 	}
 	p.IsVerified = verified == 1
 	if p.Role == "customer" {
-		_ = a.db.QueryRow(sqlf(`SELECT COUNT(*) FROM orders`)).Scan(&p.PublishedCount)
+		_ = q.QueryRow(sqlf(`SELECT COUNT(*) FROM orders WHERE customer_id=?`), p.ID).Scan(&p.PublishedCount)
 	}
 	return p, nil
 }
@@ -864,16 +906,20 @@ func (a *App) orderByID(id int) (Order, bool) {
 }
 
 func orderByIDFrom(q queryer, id int) (Order, bool) {
-	row := q.QueryRow(sqlf(`SELECT o.id,o.selected_master_id,o.preferred_master_id,o.title,o."desc",o.category,o.district,o.address,o.budget,o.when_label,o.status,o.views,o.created_at,COUNT(r.id)
+	row := q.QueryRow(sqlf(`SELECT o.id,o.customer_id,o.selected_master_id,o.preferred_master_id,o.title,o."desc",o.category,o.district,o.address,o.budget,o.when_label,o.status,o.views,o.created_at,COUNT(r.id)
 		FROM orders o LEFT JOIN responses r ON r.order_id=o.id
 		WHERE o.id=?
 		GROUP BY o.id`), id)
 	var o Order
+	var customerID sql.NullInt64
 	var selectedMasterID sql.NullInt64
 	var preferredMasterID sql.NullInt64
 	var created string
-	if err := row.Scan(&o.ID, &selectedMasterID, &preferredMasterID, &o.Title, &o.Desc, &o.Category, &o.District, &o.Address, &o.Budget, &o.When, &o.Status, &o.Views, &created, &o.Responses); err != nil {
+	if err := row.Scan(&o.ID, &customerID, &selectedMasterID, &preferredMasterID, &o.Title, &o.Desc, &o.Category, &o.District, &o.Address, &o.Budget, &o.When, &o.Status, &o.Views, &created, &o.Responses); err != nil {
 		return Order{}, false
+	}
+	if customerID.Valid {
+		o.CustomerID = int(customerID.Int64)
 	}
 	if selectedMasterID.Valid {
 		o.SelectedMasterID = int(selectedMasterID.Int64)
@@ -925,12 +971,8 @@ func (a *App) messagesForChat(chatID int) []Message {
 	return items
 }
 
-func (a *App) transactions() []Transaction {
-	return transactionsFrom(a.db)
-}
-
-func transactionsFrom(q queryer) []Transaction {
-	rows, err := q.Query(sqlf(`SELECT id,label,amount,created_at FROM transactions ORDER BY created_at DESC,id DESC LIMIT 20`))
+func transactionsFrom(q queryer, profileID int) []Transaction {
+	rows, err := q.Query(sqlf(`SELECT id,label,amount,created_at FROM transactions WHERE profile_id=? ORDER BY created_at DESC,id DESC LIMIT 20`), profileID)
 	if err != nil {
 		return nil
 	}

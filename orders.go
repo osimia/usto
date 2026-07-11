@@ -28,29 +28,46 @@ type SelectMasterResponse struct {
 }
 
 type OrderFilters struct {
-	Category string
-	District string
-	Status   string
-	Query    string
-	Limit    int
+	Category   string
+	District   string
+	Status     string
+	Query      string
+	Limit      int
+	CustomerID int
 }
 
 func (a *App) ordersHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		orders := a.filteredOrders(orderFiltersFromRequest(r))
+		filters := orderFiltersFromRequest(r)
+		if r.URL.Query().Get("mine") == "1" {
+			_, profile, ok := a.currentUserProfile(w, r)
+			if !ok {
+				return
+			}
+			filters.CustomerID = profile.ID
+		}
+		orders := a.filteredOrders(filters)
 		if r.URL.Query().Get("wrap") == "1" {
 			writeJSON(w, OrdersResponse{Orders: orders})
 			return
 		}
 		writeJSON(w, orders)
 	case http.MethodPost:
+		_, profile, ok := a.currentUserProfile(w, r)
+		if !ok {
+			return
+		}
+		if profile.Role != "customer" {
+			writeError(w, http.StatusForbidden, "forbidden", "only customers can create orders")
+			return
+		}
 		var req Order
 		if err := decode(r, &req); err != nil {
 			badRequest(w, err)
 			return
 		}
-		order, err := a.createOrder(req)
+		order, err := a.createOrder(req, profile.ID)
 		if err != nil {
 			badRequest(w, err)
 			return
@@ -157,7 +174,7 @@ func orderFiltersFromRequest(r *http.Request) OrderFilters {
 	}
 }
 
-func (a *App) createOrder(req Order) (Order, error) {
+func (a *App) createOrder(req Order, customerID int) (Order, error) {
 	title := strings.TrimSpace(req.Title)
 	if title == "" {
 		return Order{}, errors.New("title is required")
@@ -184,8 +201,8 @@ func (a *App) createOrder(req Order) (Order, error) {
 		}
 	}
 
-	id, err := insertID(a.db, `INSERT INTO orders(title,"desc",category,district,address,budget,when_label,status,views,preferred_master_id) VALUES(?,?,?,?,?,?,?,?,0,?)`,
-		title, desc, category, district, address, budget, whenLabel, "Активная", nullableInt(preferredMasterID))
+	id, err := insertID(a.db, `INSERT INTO orders(title,"desc",category,district,address,budget,when_label,status,views,preferred_master_id,customer_id) VALUES(?,?,?,?,?,?,?,?,0,?,?)`,
+		title, desc, category, district, address, budget, whenLabel, "Активная", nullableInt(preferredMasterID), nullableInt(customerID))
 	if err != nil {
 		return Order{}, err
 	}
@@ -243,7 +260,7 @@ func (a *App) filteredOrders(filters OrderFilters) []Order {
 // (SQLite has no good case-insensitive multi-column search here), but only
 // over a SQL-bounded result set, not the entire table.
 func (a *App) queryOrders(filters OrderFilters) []Order {
-	query := `SELECT o.id,o.selected_master_id,o.preferred_master_id,o.title,o."desc",o.category,o.district,o.address,o.budget,o.when_label,o.status,o.views,o.created_at,COUNT(r.id)
+	query := `SELECT o.id,o.customer_id,o.selected_master_id,o.preferred_master_id,o.title,o."desc",o.category,o.district,o.address,o.budget,o.when_label,o.status,o.views,o.created_at,COUNT(r.id)
 		FROM orders o LEFT JOIN responses r ON r.order_id=o.id`
 	var conditions []string
 	var args []any
@@ -258,6 +275,10 @@ func (a *App) queryOrders(filters OrderFilters) []Order {
 	if filters.Status != "" {
 		conditions = append(conditions, equalityCI("o.status"))
 		args = append(args, filters.Status)
+	}
+	if filters.CustomerID > 0 {
+		conditions = append(conditions, "o.customer_id = ?")
+		args = append(args, filters.CustomerID)
 	}
 	if len(conditions) > 0 {
 		query += " WHERE " + strings.Join(conditions, " AND ")
@@ -282,10 +303,14 @@ func (a *App) queryOrders(filters OrderFilters) []Order {
 	var items []Order
 	for rows.Next() {
 		var o Order
+		var customerID sql.NullInt64
 		var selectedMasterID sql.NullInt64
 		var preferredMasterID sql.NullInt64
 		var created string
-		if rows.Scan(&o.ID, &selectedMasterID, &preferredMasterID, &o.Title, &o.Desc, &o.Category, &o.District, &o.Address, &o.Budget, &o.When, &o.Status, &o.Views, &created, &o.Responses) == nil {
+		if rows.Scan(&o.ID, &customerID, &selectedMasterID, &preferredMasterID, &o.Title, &o.Desc, &o.Category, &o.District, &o.Address, &o.Budget, &o.When, &o.Status, &o.Views, &created, &o.Responses) == nil {
+			if customerID.Valid {
+				o.CustomerID = int(customerID.Int64)
+			}
 			if selectedMasterID.Valid {
 				o.SelectedMasterID = int(selectedMasterID.Int64)
 			}

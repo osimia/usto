@@ -133,7 +133,7 @@ func (a *App) chats() []Chat {
 	}
 	defer rows.Close()
 
-	customer, _ := a.profile("customer")
+	demoCustomer, _ := a.profile("customer")
 	var items []Chat
 	for rows.Next() {
 		var chatID, orderID, masterID int
@@ -153,12 +153,20 @@ func (a *App) chats() []Chat {
 		if len(messages) > 0 {
 			last = messages[len(messages)-1]
 		}
+		// Orders created before customer_id existed (or via the legacy
+		// unauthenticated path) fall back to the demo customer's name.
+		customerName := demoCustomer.Name
+		if order.CustomerID > 0 {
+			if realCustomer, err := a.profileByID(order.CustomerID); err == nil {
+				customerName = realCustomer.Name
+			}
+		}
 		orderCopy := order
 		items = append(items, Chat{
 			ID:          chatID,
 			OrderID:     order.ID,
 			OrderTitle:  order.Title,
-			Customer:    customer.Name,
+			Customer:    customerName,
 			Master:      master.Name,
 			LastMessage: last.Text,
 			LastTime:    last.CreatedAt,
