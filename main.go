@@ -48,20 +48,30 @@ type Master struct {
 	Portfolio []string `json:"portfolio"`
 }
 
+type MasterReview struct {
+	ID         int    `json:"id"`
+	MasterID   int    `json:"masterId"`
+	AuthorName string `json:"authorName"`
+	Rating     int    `json:"rating"`
+	Text       string `json:"text"`
+	CreatedAt  string `json:"createdAt"`
+}
+
 type Order struct {
-	ID               int    `json:"id"`
-	SelectedMasterID int    `json:"selectedMasterId,omitempty"`
-	Title            string `json:"title"`
-	Desc             string `json:"desc"`
-	Category         string `json:"category"`
-	District         string `json:"district"`
-	Address          string `json:"address"`
-	Budget           string `json:"budget"`
-	When             string `json:"when"`
-	Status           string `json:"status"`
-	Views            int    `json:"views"`
-	Responses        int    `json:"responses"`
-	CreatedAt        string `json:"createdAt"`
+	ID                int    `json:"id"`
+	SelectedMasterID  int    `json:"selectedMasterId,omitempty"`
+	PreferredMasterID int    `json:"preferredMasterId,omitempty"`
+	Title             string `json:"title"`
+	Desc              string `json:"desc"`
+	Category          string `json:"category"`
+	District          string `json:"district"`
+	Address           string `json:"address"`
+	Budget            string `json:"budget"`
+	When              string `json:"when"`
+	Status            string `json:"status"`
+	Views             int    `json:"views"`
+	Responses         int    `json:"responses"`
+	CreatedAt         string `json:"createdAt"`
 }
 
 type Response struct {
@@ -267,10 +277,20 @@ func migrate(db *sql.DB) error {
 		if err := ensureColumn(db, "orders", "selected_master_id", `ALTER TABLE orders ADD COLUMN selected_master_id INTEGER REFERENCES masters(id)`); err != nil {
 			return err
 		}
+		if err := ensureColumn(db, "orders", "preferred_master_id", `ALTER TABLE orders ADD COLUMN preferred_master_id INTEGER REFERENCES masters(id)`); err != nil {
+			return err
+		}
 		if err := ensureColumn(db, "profiles", "district", `ALTER TABLE profiles ADD COLUMN district TEXT NOT NULL DEFAULT ''`); err != nil {
 			return err
 		}
 		if err := ensureColumn(db, "profiles", "avatar_url", `ALTER TABLE profiles ADD COLUMN avatar_url TEXT NOT NULL DEFAULT ''`); err != nil {
+			return err
+		}
+	} else if activeSQLDriver == "postgres" {
+		if err := ensureColumn(db, "orders", "selected_master_id", `ALTER TABLE orders ADD COLUMN selected_master_id BIGINT REFERENCES masters(id)`); err != nil {
+			return err
+		}
+		if err := ensureColumn(db, "orders", "preferred_master_id", `ALTER TABLE orders ADD COLUMN preferred_master_id BIGINT REFERENCES masters(id)`); err != nil {
 			return err
 		}
 	}
@@ -324,8 +344,9 @@ func sqliteSchema() []string {
 		`CREATE TABLE IF NOT EXISTS orders (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			selected_master_id INTEGER REFERENCES masters(id),
+			preferred_master_id INTEGER REFERENCES masters(id),
 			title TEXT NOT NULL,
-			desc TEXT NOT NULL,
+			"desc" TEXT NOT NULL,
 			category TEXT NOT NULL,
 			district TEXT NOT NULL,
 			address TEXT NOT NULL,
@@ -380,6 +401,14 @@ func sqliteSchema() []string {
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			reviewed_at DATETIME
 		);`,
+		`CREATE TABLE IF NOT EXISTS master_reviews (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			master_id INTEGER NOT NULL REFERENCES masters(id) ON DELETE CASCADE,
+			author_name TEXT NOT NULL,
+			rating INTEGER NOT NULL,
+			text TEXT NOT NULL,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);`,
 	}
 }
 
@@ -430,8 +459,9 @@ func postgresSchema() []string {
 		`CREATE TABLE IF NOT EXISTS orders (
 			id BIGSERIAL PRIMARY KEY,
 			selected_master_id BIGINT REFERENCES masters(id),
+			preferred_master_id BIGINT REFERENCES masters(id),
 			title TEXT NOT NULL,
-			desc TEXT NOT NULL,
+			"desc" TEXT NOT NULL,
 			category TEXT NOT NULL,
 			district TEXT NOT NULL,
 			address TEXT NOT NULL,
@@ -485,6 +515,14 @@ func postgresSchema() []string {
 			rejection_reason TEXT NOT NULL DEFAULT '',
 			created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			reviewed_at TIMESTAMPTZ
+		);`,
+		`CREATE TABLE IF NOT EXISTS master_reviews (
+			id BIGSERIAL PRIMARY KEY,
+			master_id BIGINT NOT NULL REFERENCES masters(id) ON DELETE CASCADE,
+			author_name TEXT NOT NULL,
+			rating INTEGER NOT NULL,
+			text TEXT NOT NULL,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 		);`,
 	}
 }
@@ -592,7 +630,7 @@ func seed(db *sql.DB) error {
 		{Title: "Собрать шкаф в спальне", Desc: "Шкаф куплен, нужна аккуратная сборка", Category: "Мебель", District: "Шохмансур", Address: "Айни 7", Budget: "жду цену", When: "На неделе", Status: "Выбор мастера", Views: 22, CreatedAt: now.Add(-24 * time.Hour).Format(time.RFC3339Nano)},
 	}
 	for _, order := range ordersSeed {
-		mustExec(`INSERT INTO orders(title,desc,category,district,address,budget,when_label,status,views,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)`,
+		mustExec(`INSERT INTO orders(title,"desc",category,district,address,budget,when_label,status,views,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)`,
 			order.Title, order.Desc, order.Category, order.District, order.Address, order.Budget, order.When, order.Status, order.Views, order.CreatedAt)
 	}
 	responseSeeds := []struct {
@@ -638,6 +676,23 @@ func seed(db *sql.DB) error {
 	for _, item := range transactionSeeds {
 		mustExec(`INSERT INTO transactions(label,amount,created_at) VALUES(?,?,?)`,
 			item.label, item.amount, item.createdAt)
+	}
+	reviewSeeds := []struct {
+		masterID   int
+		authorName string
+		rating     int
+		text       string
+		createdAt  string
+	}{
+		{1, "Алишер Назаров", 5, "Приехал вовремя, быстро устранил протечку и всё оставил чисто.", now.Add(-48 * time.Hour).Format(time.RFC3339Nano)},
+		{1, "Мухаммад Р.", 5, "Хорошо объяснил причину поломки и сделал аккуратно.", now.Add(-96 * time.Hour).Format(time.RFC3339Nano)},
+		{2, "Саида К.", 5, "Розетки установлены ровно, мастер вежливый и пунктуальный.", now.Add(-36 * time.Hour).Format(time.RFC3339Nano)},
+		{2, "Фирдавс Т.", 4, "Работа выполнена качественно, немного задержался в пути.", now.Add(-120 * time.Hour).Format(time.RFC3339Nano)},
+		{3, "Нозим А.", 5, "Плитка уложена аккуратно, всё совпало по срокам.", now.Add(-168 * time.Hour).Format(time.RFC3339Nano)},
+	}
+	for _, item := range reviewSeeds {
+		mustExec(`INSERT INTO master_reviews(master_id,author_name,rating,text,created_at) VALUES(?,?,?,?,?)`,
+			item.masterID, item.authorName, item.rating, item.text, item.createdAt)
 	}
 
 	if err != nil {
@@ -809,18 +864,22 @@ func (a *App) orderByID(id int) (Order, bool) {
 }
 
 func orderByIDFrom(q queryer, id int) (Order, bool) {
-	row := q.QueryRow(sqlf(`SELECT o.id,o.selected_master_id,o.title,o.desc,o.category,o.district,o.address,o.budget,o.when_label,o.status,o.views,o.created_at,COUNT(r.id)
+	row := q.QueryRow(sqlf(`SELECT o.id,o.selected_master_id,o.preferred_master_id,o.title,o."desc",o.category,o.district,o.address,o.budget,o.when_label,o.status,o.views,o.created_at,COUNT(r.id)
 		FROM orders o LEFT JOIN responses r ON r.order_id=o.id
 		WHERE o.id=?
 		GROUP BY o.id`), id)
 	var o Order
 	var selectedMasterID sql.NullInt64
+	var preferredMasterID sql.NullInt64
 	var created string
-	if err := row.Scan(&o.ID, &selectedMasterID, &o.Title, &o.Desc, &o.Category, &o.District, &o.Address, &o.Budget, &o.When, &o.Status, &o.Views, &created, &o.Responses); err != nil {
+	if err := row.Scan(&o.ID, &selectedMasterID, &preferredMasterID, &o.Title, &o.Desc, &o.Category, &o.District, &o.Address, &o.Budget, &o.When, &o.Status, &o.Views, &created, &o.Responses); err != nil {
 		return Order{}, false
 	}
 	if selectedMasterID.Valid {
 		o.SelectedMasterID = int(selectedMasterID.Int64)
+	}
+	if preferredMasterID.Valid {
+		o.PreferredMasterID = int(preferredMasterID.Int64)
 	}
 	o.CreatedAt = relativeTime(created)
 	return o, true

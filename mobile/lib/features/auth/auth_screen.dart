@@ -25,22 +25,18 @@ class _AuthScreenState extends State<AuthScreen> {
     _OnboardingItem(
       icon: Icons.assignment_outlined,
       title: 'Опишите задачу',
-      subtitle: 'Вазифаро тавсиф кунед',
       body:
-          'Укажите, что нужно сделать, и мастера увидят вашу заявку за пару минут.',
+          'Создайте заявку за минуту и получите отклики от подходящих мастеров.',
     ),
     _OnboardingItem(
       icon: Icons.groups_2_outlined,
       title: 'Сравните мастеров',
-      subtitle: 'Устоҳоро муқоиса кунед',
-      body:
-          'Смотрите рейтинг, цену, портфолио и выбирайте того, кто вам подходит.',
+      body: 'Смотрите рейтинг, цену и опыт, чтобы выбрать лучшего исполнителя.',
     ),
     _OnboardingItem(
       icon: Icons.chat_bubble_outline,
       title: 'Договоритесь в чате',
-      subtitle: 'Дар чат созиш кунед',
-      body: 'Обсуждайте время, адрес и детали заказа внутри приложения.',
+      body: 'Уточняйте время, адрес и детали заказа прямо внутри приложения.',
     ),
   ];
 
@@ -157,7 +153,7 @@ class _AuthScreenState extends State<AuthScreen> {
       backgroundColor: const Color(0xFF111A32),
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(18, 18, 18, 20),
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 18),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -170,59 +166,51 @@ class _AuthScreenState extends State<AuthScreen> {
                     final slide = _items[index];
                     return Column(
                       children: [
-                        const Spacer(flex: 2),
+                        const Spacer(),
                         Container(
-                          width: 270,
-                          height: 270,
+                          width: 228,
+                          height: 228,
                           decoration: BoxDecoration(
                             color: const Color(0xFF2B5DE0),
-                            borderRadius: BorderRadius.circular(40),
+                            borderRadius: BorderRadius.circular(32),
                             boxShadow: const [
                               BoxShadow(
-                                color: Color(0x33000000),
-                                blurRadius: 30,
-                                offset: Offset(0, 18),
+                                color: Color(0x24000000),
+                                blurRadius: 24,
+                                offset: Offset(0, 16),
                               ),
                             ],
                           ),
                           child: Icon(
                             slide.icon,
                             color: Colors.white,
-                            size: 104,
+                            size: 82,
                           ),
                         ),
-                        const Spacer(),
+                        const SizedBox(height: 34),
                         Text(
                           slide.title,
                           textAlign: TextAlign.center,
-                          style: theme.textTheme.headlineMedium?.copyWith(
+                          style: theme.textTheme.headlineSmall?.copyWith(
                             color: Colors.white,
                             fontWeight: FontWeight.w800,
+                            fontSize: 26,
                           ),
                         ),
-                        const SizedBox(height: 8),
-                        Text(
-                          slide.subtitle,
-                          textAlign: TextAlign.center,
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            color: const Color(0xFF9CA3AF),
-                            fontStyle: FontStyle.italic,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        const SizedBox(height: 20),
+                        const SizedBox(height: 16),
                         Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
                           child: Text(
                             slide.body,
                             textAlign: TextAlign.center,
-                            style: theme.textTheme.bodyLarge?.copyWith(
+                            style: theme.textTheme.bodyMedium?.copyWith(
                               color: const Color(0xFF8F96A8),
                               height: 1.45,
+                              fontSize: 17,
                             ),
                           ),
                         ),
-                        const Spacer(flex: 2),
+                        const Spacer(),
                       ],
                     );
                   },
@@ -256,9 +244,14 @@ class _AuthScreenState extends State<AuthScreen> {
                       style: FilledButton.styleFrom(
                         backgroundColor: const Color(0xFF232E4A),
                         foregroundColor: const Color(0xFF9CA3AF),
+                        minimumSize: const Size.fromHeight(54),
+                        textStyle: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                       onPressed: _goToPhone,
-                      child: const Text('Пропустить'),
+                      child: const FittedBox(child: Text('Пропустить')),
                     ),
                   ),
                   const SizedBox(width: 14),
@@ -268,6 +261,11 @@ class _AuthScreenState extends State<AuthScreen> {
                       style: FilledButton.styleFrom(
                         backgroundColor: const Color(0xFF2B5DE0),
                         foregroundColor: Colors.white,
+                        minimumSize: const Size.fromHeight(54),
+                        textStyle: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                       onPressed: () {
                         if (_page == _items.length - 1) {
@@ -280,7 +278,7 @@ class _AuthScreenState extends State<AuthScreen> {
                         );
                       },
                       child: Text(
-                        _page == _items.length - 1 ? 'Начать' : 'Далее ->',
+                        _page == _items.length - 1 ? 'Начать' : 'Далее',
                       ),
                     ),
                   ),
@@ -307,20 +305,20 @@ class _AuthScreenState extends State<AuthScreen> {
             ),
           ),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 18, 24, 18),
+            padding: const EdgeInsets.fromLTRB(18, 12, 18, 14),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const _AuthBrandBlock(
                   title: 'Вход в аккаунт',
-                  subtitle: 'Быстрый вход для заказчиков и мастеров',
+                  subtitle: 'Вход для заказчиков и мастеров',
                 ),
-                const SizedBox(height: 26),
+                const SizedBox(height: 14),
                 Container(
-                  padding: const EdgeInsets.all(20),
+                  padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.circular(28),
+                    borderRadius: BorderRadius.circular(24),
                     boxShadow: const [
                       BoxShadow(
                         color: Color(0x120F172A),
@@ -337,17 +335,18 @@ class _AuthScreenState extends State<AuthScreen> {
                         style: theme.textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.w800,
                           color: const Color(0xFF1F2940),
+                          fontSize: 16,
                         ),
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        'Введите номер и выберите роль для входа',
-                        style: theme.textTheme.bodyMedium?.copyWith(
+                        'Введите номер и выберите роль',
+                        style: theme.textTheme.bodySmall?.copyWith(
                           color: const Color(0xFF64748B),
                           height: 1.4,
                         ),
                       ),
-                      const SizedBox(height: 18),
+                      const SizedBox(height: 16),
                       _PhoneInputCard(phoneDigits: _phoneDigits),
                       const SizedBox(height: 14),
                       SegmentedButton<String>(
@@ -356,7 +355,7 @@ class _AuthScreenState extends State<AuthScreen> {
                             BorderSide(color: Color(0xFFD5E1F7)),
                           ),
                           padding: const WidgetStatePropertyAll(
-                            EdgeInsets.symmetric(vertical: 12),
+                            EdgeInsets.symmetric(vertical: 10),
                           ),
                         ),
                         segments: const [
@@ -378,7 +377,7 @@ class _AuthScreenState extends State<AuthScreen> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 18),
+                const SizedBox(height: 10),
                 if (_error != null) ...[
                   _AuthErrorBanner(message: _error!),
                   const SizedBox(height: 12),
@@ -395,14 +394,14 @@ class _AuthScreenState extends State<AuthScreen> {
                     backgroundColor: const Color(0xFF2B5DE0),
                     foregroundColor: Colors.white,
                     disabledBackgroundColor: const Color(0xFFD0D9E8),
-                    minimumSize: const Size.fromHeight(56),
+                    minimumSize: const Size.fromHeight(52),
                   ),
                   onPressed: _loading || _phoneDigits.length != 9
                       ? null
                       : _requestCode,
                   child: Text(_loading ? 'Отправляем...' : 'Получить SMS-код'),
                 ),
-                const SizedBox(height: 18),
+                const SizedBox(height: 14),
                 Text.rich(
                   TextSpan(
                     text: 'Продолжая, вы соглашаетесь с ',
@@ -419,7 +418,7 @@ class _AuthScreenState extends State<AuthScreen> {
                     ],
                   ),
                   textAlign: TextAlign.center,
-                  style: theme.textTheme.bodyMedium?.copyWith(
+                  style: theme.textTheme.bodySmall?.copyWith(
                     color: const Color(0xFF94A3B8),
                   ),
                 ),
@@ -445,7 +444,7 @@ class _AuthScreenState extends State<AuthScreen> {
             ),
           ),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 18, 24, 18),
+            padding: const EdgeInsets.fromLTRB(18, 12, 18, 14),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -465,6 +464,7 @@ class _AuthScreenState extends State<AuthScreen> {
                             style: theme.textTheme.titleLarge?.copyWith(
                               fontWeight: FontWeight.w800,
                               color: const Color(0xFF1F2940),
+                              fontSize: 17,
                             ),
                           ),
                           Text(
@@ -478,12 +478,12 @@ class _AuthScreenState extends State<AuthScreen> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 14),
                 Container(
-                  padding: const EdgeInsets.all(20),
+                  padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.circular(28),
+                    borderRadius: BorderRadius.circular(24),
                     boxShadow: const [
                       BoxShadow(
                         color: Color(0x120F172A),
@@ -497,7 +497,7 @@ class _AuthScreenState extends State<AuthScreen> {
                     children: [
                       Text(
                         'Введите SMS-код',
-                        style: theme.textTheme.titleLarge?.copyWith(
+                        style: theme.textTheme.titleMedium?.copyWith(
                           color: const Color(0xFF1F2940),
                           fontWeight: FontWeight.w800,
                         ),
@@ -509,7 +509,7 @@ class _AuthScreenState extends State<AuthScreen> {
                           color: const Color(0xFF64748B),
                         ),
                       ),
-                      const SizedBox(height: 18),
+                      const SizedBox(height: 16),
                       Row(
                         children: [
                           for (var i = 0; i < 4; i++) ...[
@@ -535,7 +535,7 @@ class _AuthScreenState extends State<AuthScreen> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 18),
+                const SizedBox(height: 10),
                 if (_error != null) ...[
                   _AuthErrorBanner(message: _error!),
                   const SizedBox(height: 12),
@@ -552,7 +552,7 @@ class _AuthScreenState extends State<AuthScreen> {
                     backgroundColor: const Color(0xFF2B5DE0),
                     foregroundColor: Colors.white,
                     disabledBackgroundColor: const Color(0xFFD0D9E8),
-                    minimumSize: const Size.fromHeight(56),
+                    minimumSize: const Size.fromHeight(52),
                   ),
                   onPressed: _loading || _codeDigits.length != 4
                       ? null
@@ -572,13 +572,11 @@ class _OnboardingItem {
   const _OnboardingItem({
     required this.icon,
     required this.title,
-    required this.subtitle,
     required this.body,
   });
 
   final IconData icon;
   final String title;
-  final String subtitle;
   final String body;
 }
 
@@ -591,38 +589,39 @@ class _PhoneInputCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final formatted = _formatPhoneDigits(phoneDigits);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       decoration: BoxDecoration(
         color: const Color(0xFFF8FAFF),
-        borderRadius: BorderRadius.circular(26),
-        border: Border.all(color: const Color(0xFF2B5DE0), width: 1.6),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFF2B5DE0), width: 1.5),
       ),
       child: Row(
         children: [
-          const Text('🇹🇯', style: TextStyle(fontSize: 26)),
-          const SizedBox(width: 12),
+          const Text('🇹🇯', style: TextStyle(fontSize: 24)),
+          const SizedBox(width: 10),
           const Text(
             '+992',
             style: TextStyle(
-              fontSize: 18,
+              fontSize: 16,
               fontWeight: FontWeight.w800,
               color: Color(0xFF1F2940),
             ),
           ),
           Container(
             width: 1,
-            height: 32,
-            margin: const EdgeInsets.symmetric(horizontal: 16),
+            height: 28,
+            margin: const EdgeInsets.symmetric(horizontal: 14),
             color: const Color(0xFFB4C5F0),
           ),
           Expanded(
             child: Text(
               formatted,
               style: const TextStyle(
-                fontSize: 22,
-                letterSpacing: 1,
+                fontSize: 18,
+                letterSpacing: 0.6,
                 fontWeight: FontWeight.w700,
                 color: Color(0xFF334155),
+                height: 1.15,
               ),
             ),
           ),
@@ -658,29 +657,30 @@ class _AuthBrandBlock extends StatelessWidget {
               height: 40,
               fit: BoxFit.contain,
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 10),
             Text(
               'USTO',
               style: theme.textTheme.headlineSmall?.copyWith(
                 color: const Color(0xFF111827),
                 fontWeight: FontWeight.w900,
-                fontSize: 28,
+                fontSize: 22,
               ),
             ),
           ],
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 14),
         Text(
           title,
-          style: theme.textTheme.headlineMedium?.copyWith(
+          style: theme.textTheme.headlineSmall?.copyWith(
             color: const Color(0xFF1F2940),
             fontWeight: FontWeight.w800,
+            fontSize: 20,
           ),
         ),
         const SizedBox(height: 8),
         Text(
           subtitle,
-          style: theme.textTheme.bodyLarge?.copyWith(
+          style: theme.textTheme.bodyMedium?.copyWith(
             color: const Color(0xFF64748B),
             height: 1.4,
           ),
@@ -726,11 +726,11 @@ class _CodeCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 74,
+      height: 64,
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(
           color: value.isEmpty
               ? const Color(0xFFD9E2F2)
@@ -741,7 +741,7 @@ class _CodeCell extends StatelessWidget {
       child: Text(
         value.isEmpty ? '•' : value,
         style: const TextStyle(
-          fontSize: 28,
+          fontSize: 22,
           fontWeight: FontWeight.w800,
           color: Color(0xFF1F2940),
         ),
@@ -764,9 +764,9 @@ class _AuthKeyboard extends StatelessWidget {
       physics: const NeverScrollableScrollPhysics(),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 3,
-        mainAxisSpacing: 12,
-        crossAxisSpacing: 12,
-        childAspectRatio: 1.2,
+        mainAxisSpacing: 8,
+        crossAxisSpacing: 8,
+        childAspectRatio: 1.22,
       ),
       itemCount: labels.length,
       itemBuilder: (context, index) {
@@ -790,7 +790,7 @@ class _AuthKeyboard extends StatelessWidget {
                     Text(
                       label,
                       style: const TextStyle(
-                        fontSize: 22,
+                        fontSize: 18,
                         fontWeight: FontWeight.w800,
                         color: Color(0xFF1F2940),
                       ),
@@ -799,7 +799,7 @@ class _AuthKeyboard extends StatelessWidget {
                       Text(
                         _lettersForDigit(label),
                         style: const TextStyle(
-                          fontSize: 12,
+                          fontSize: 11,
                           color: Color(0xFF94A3B8),
                         ),
                       ),
@@ -849,9 +849,9 @@ class _KeyboardKey extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       color: const Color(0xFFF8FAFC),
-      borderRadius: BorderRadius.circular(22),
+      borderRadius: BorderRadius.circular(16),
       child: InkWell(
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(16),
         onTap: onTap,
         child: Center(child: child),
       ),

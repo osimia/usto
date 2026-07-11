@@ -32,19 +32,22 @@ class _HomeShellState extends State<HomeShell> {
   Future<HomeData> _load() async {
     final results = await Future.wait([
       widget.apiClient.getJson('/me'),
-      widget.apiClient.getJson('/orders?wrap=1'),
-      widget.apiClient.getJson('/masters?wrap=1'),
-      widget.apiClient.getJson('/wallet'),
       widget.apiClient.getJson('/chats'),
-      widget.apiClient.getJson('/categories?wrap=1'),
+      widget.apiClient.getJson('/bootstrap'),
     ]);
+    final bootstrap = results[2];
+    final master = bootstrap['master'] as Map<String, dynamic>? ?? const {};
     return HomeData(
       me: results[0],
-      orders: asMapList(results[1]['orders']),
-      masters: asMapList(results[2]['masters']),
-      wallet: results[3]['wallet'] as Map<String, dynamic>,
-      chats: asMapList(results[4]['chats']),
-      categories: asMapList(results[5]['categories']),
+      orders: asMapList(bootstrap['orders']),
+      masters: asMapList(bootstrap['masters']),
+      wallet: {
+        'balance': master['walletBalance'] ?? 0,
+        'currency': 'TJS',
+        'transactions': asMapList(bootstrap['transactions']),
+      },
+      chats: asMapList(results[1]['chats']),
+      categories: asMapList(bootstrap['categories']),
     );
   }
 
@@ -93,11 +96,14 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   Future<void> _openMaster(Map<String, dynamic> master) async {
+    final data = await _future;
+    if (!mounted) return;
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => MasterDetailScreen(
           apiClient: widget.apiClient,
           masterId: master['id'] as int,
+          categories: data.categories,
         ),
       ),
     );
@@ -157,7 +163,7 @@ class _HomeShellState extends State<HomeShell> {
         future: _future,
         builder: (context, snapshot) {
           if (snapshot.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
+            return const _HomeLoadingView();
           }
           if (snapshot.hasError) {
             return ErrorState(
@@ -212,7 +218,10 @@ class _HomeShellState extends State<HomeShell> {
                     onWallet: _openWallet,
                   ),
                 ];
-          return RefreshIndicator(onRefresh: _refresh, child: pages[_tab]);
+          return SafeArea(
+            bottom: false,
+            child: RefreshIndicator(onRefresh: _refresh, child: pages[_tab]),
+          );
         },
       ),
       bottomNavigationBar: NavigationBar(
@@ -394,7 +403,7 @@ class OverviewPage extends StatelessWidget {
                           SizedBox(width: 12),
                           Expanded(
                             child: Text(
-                              'Что нужно сделать? / Чи бояд кард?',
+                              'Что нужно сделать?',
                               style: TextStyle(
                                 color: Color(0xFF7C859A),
                                 fontSize: 15,
@@ -439,21 +448,27 @@ class OverviewPage extends StatelessWidget {
                 onTap: onOpenAllMasters,
               ),
               const SizedBox(height: 14),
-              GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 4,
-                  crossAxisSpacing: 12,
-                  mainAxisSpacing: 12,
-                  childAspectRatio: 0.86,
-                ),
-                itemCount: categories.length,
-                itemBuilder: (context, index) {
-                  final category = categories[index];
-                  return _CategoryTile(
-                    label: category['name'] as String? ?? 'Категория',
-                    onTap: onCreateOrder,
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final crossAxisCount = constraints.maxWidth < 360 ? 3 : 4;
+                  final aspectRatio = crossAxisCount == 3 ? 0.88 : 0.74;
+                  return GridView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: crossAxisCount,
+                      crossAxisSpacing: 12,
+                      mainAxisSpacing: 12,
+                      childAspectRatio: aspectRatio,
+                    ),
+                    itemCount: categories.length,
+                    itemBuilder: (context, index) {
+                      final category = categories[index];
+                      return _CategoryTile(
+                        label: category['name'] as String? ?? 'Категория',
+                        onTap: onCreateOrder,
+                      );
+                    },
                   );
                 },
               ),
@@ -465,7 +480,7 @@ class OverviewPage extends StatelessWidget {
               ),
               const SizedBox(height: 14),
               SizedBox(
-                height: 214,
+                height: 244,
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
                   itemCount: featuredMasters.length,
@@ -486,6 +501,16 @@ class OverviewPage extends StatelessWidget {
                 onTap: onOpenAllOrders,
               ),
               const SizedBox(height: 14),
+              Text(
+                latestOrders.isEmpty
+                    ? 'Здесь появятся ваши свежие обращения.'
+                    : 'Открывайте заявку, чтобы следить за откликами, статусом и дальнейшим выбором мастера.',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: const Color(0xFF667085),
+                  height: 1.35,
+                ),
+              ),
+              const SizedBox(height: 12),
               if (latestOrders.isEmpty)
                 const EmptyState(
                   icon: Icons.assignment_outlined,
@@ -608,6 +633,37 @@ class OrdersPage extends StatelessWidget {
         const SizedBox(height: 16),
         _OrdersSummaryCard(orders: orders, onCreateOrder: onCreateOrder),
         const SizedBox(height: 14),
+        if (orders.isNotEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFFE6ECF5)),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.folder_open_outlined,
+                  size: 18,
+                  color: Color(0xFF2563EB),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Здесь собраны все ваши заявки: открывайте нужную и быстро переходите к откликам мастеров.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: const Color(0xFF667085),
+                      fontWeight: FontWeight.w600,
+                      height: 1.35,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        if (orders.isNotEmpty) const SizedBox(height: 14),
         if (orders.isEmpty)
           const EmptyState(
             icon: Icons.assignment_outlined,
@@ -616,8 +672,8 @@ class OrdersPage extends StatelessWidget {
                 'Создайте первую заявку, и мастера смогут откликнуться в ближайшее время.',
           ),
         for (final order in orders) ...[
-          OrderTile(order: order, onTap: () => onOpenOrder(order)),
-          const SizedBox(height: 10),
+          _CustomerOrderCard(order: order, onTap: () => onOpenOrder(order)),
+          const SizedBox(height: 12),
         ],
       ],
     );
@@ -655,33 +711,26 @@ class MastersPage extends StatelessWidget {
             borderRadius: BorderRadius.circular(24),
             border: Border.all(color: const Color(0xFFE2E8F0)),
           ),
-          child: Row(
+          child: _AdaptiveStatGrid(
+            minTileWidth: 92,
             children: [
-              Expanded(
-                child: _SummaryStatTile(
-                  label: 'Всего',
-                  value: '${masters.length}',
-                  accent: const Color(0xFF0F172A),
-                ),
+              _SummaryStatTile(
+                label: 'Всего',
+                value: '${masters.length}',
+                accent: const Color(0xFF0F172A),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _SummaryStatTile(
-                  label: 'Проверены',
-                  value:
-                      '${masters.where((master) => master['verified'] == true).length}',
-                  accent: const Color(0xFF059669),
-                ),
+              _SummaryStatTile(
+                label: 'Проверены',
+                value:
+                    '${masters.where((master) => master['verified'] == true).length}',
+                accent: const Color(0xFF059669),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _SummaryStatTile(
-                  label: 'Рейтинг',
-                  value: masters.isEmpty
-                      ? '0'
-                      : _averageMasterRating(masters).toStringAsFixed(1),
-                  accent: const Color(0xFF2563EB),
-                ),
+              _SummaryStatTile(
+                label: 'Рейтинг',
+                value: masters.isEmpty
+                    ? '0'
+                    : _averageMasterRating(masters).toStringAsFixed(1),
+                accent: const Color(0xFF2563EB),
               ),
             ],
           ),
@@ -726,6 +775,8 @@ class ProfilePage extends StatelessWidget {
     final profile = data.profile;
     final isVerified = profile['isVerified'] == true;
     if (isMaster) {
+      final balanceText =
+          '${data.wallet['balance']} ${data.wallet['currency']}';
       return ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -761,42 +812,117 @@ class ProfilePage extends StatelessWidget {
               tone: isVerified ? StatusTone.success : StatusTone.warning,
             ),
           ),
-          const SizedBox(height: 12),
-          InfoCard(
-            icon: Icons.badge_outlined,
-            title: profile['name'] as String? ?? 'Мастер',
-            subtitle:
-                '${profile['phone'] ?? ''} · ${profile['city'] ?? 'Душанбе'}',
-          ),
-          const SizedBox(height: 10),
-          InfoCard(
-            icon: Icons.verified_user_outlined,
-            title: isVerified ? 'Профиль проверен' : 'Нужна верификация',
-            subtitle: isVerified
-                ? 'Аккаунт готов к приёму заказов'
-                : 'Завершите проверку, чтобы повысить доверие',
-            trailing: StatusPill(
-              icon: isVerified
-                  ? Icons.verified
-                  : Icons.pending_actions_outlined,
-              label: isVerified ? 'Готов' : 'Проверка',
-              tone: isVerified ? StatusTone.success : StatusTone.warning,
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
             ),
-            onTap: onVerification,
+            child: Column(
+              children: [
+                _AdaptiveStatGrid(
+                  minTileWidth: 96,
+                  children: [
+                    _SummaryStatTile(
+                      label: 'Статус',
+                      value: isVerified ? 'Готов' : 'Проверка',
+                      accent: isVerified
+                          ? const Color(0xFF059669)
+                          : const Color(0xFFF59E0B),
+                    ),
+                    _SummaryStatTile(
+                      label: 'Баланс',
+                      value: '${data.wallet['balance']}',
+                      accent: const Color(0xFF2563EB),
+                    ),
+                    _SummaryStatTile(
+                      label: 'Город',
+                      value: profile['city'] as String? ?? 'Душанбе',
+                      accent: const Color(0xFF8B5CF6),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                _AdaptiveStatGrid(
+                  minTileWidth: 140,
+                  children: [
+                    _ProfileActionTile(
+                      icon: Icons.account_balance_wallet_outlined,
+                      label: 'Баланс',
+                      accent: const Color(0xFF2563EB),
+                      onTap: onWallet,
+                    ),
+                    _ProfileActionTile(
+                      icon: Icons.verified_user_outlined,
+                      label: isVerified ? 'Статус' : 'Проверка',
+                      accent: isVerified
+                          ? const Color(0xFF059669)
+                          : const Color(0xFFF59E0B),
+                      onTap: onVerification,
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 12),
-          InfoCard(
-            icon: Icons.account_balance_wallet_outlined,
-            title: '${data.wallet['balance']} ${data.wallet['currency']}',
-            subtitle: 'Баланс для откликов',
-            onTap: onWallet,
-          ),
-          const SizedBox(height: 10),
-          InfoCard(
-            icon: Icons.edit_outlined,
-            title: 'Настройки профиля',
-            subtitle: 'Имя, город и рабочая информация',
-            onTap: onEdit,
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: const Color(0xFFE8EEF6)),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x0C0F172A),
+                  blurRadius: 18,
+                  offset: Offset(0, 10),
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                _ProfileSummaryRow(
+                  icon: Icons.badge_outlined,
+                  title: profile['name'] as String? ?? 'Мастер',
+                  subtitle:
+                      '${profile['phone'] ?? ''} · ${profile['city'] ?? 'Душанбе'}',
+                ),
+                const SizedBox(height: 10),
+                _ProfileSummaryRow(
+                  icon: Icons.verified_user_outlined,
+                  title: isVerified ? 'Профиль проверен' : 'Нужна верификация',
+                  subtitle: isVerified
+                      ? 'Аккаунт готов к приёму заказов и виден клиентам увереннее.'
+                      : 'Завершите проверку, чтобы повысить доверие и качество откликов.',
+                  trailing: StatusPill(
+                    icon: isVerified
+                        ? Icons.verified
+                        : Icons.pending_actions_outlined,
+                    label: isVerified ? 'Готов' : 'Проверка',
+                    tone: isVerified ? StatusTone.success : StatusTone.warning,
+                  ),
+                  onTap: onVerification,
+                ),
+                const SizedBox(height: 10),
+                _ProfileSummaryRow(
+                  icon: Icons.account_balance_wallet_outlined,
+                  title: balanceText,
+                  subtitle: 'Баланс для откликов и работы по заказам',
+                  onTap: onWallet,
+                ),
+                const SizedBox(height: 10),
+                _ProfileSummaryRow(
+                  icon: Icons.edit_outlined,
+                  title: 'Настройки профиля',
+                  subtitle:
+                      'Имя, город, рабочая информация и видимость профиля',
+                  onTap: onEdit,
+                ),
+              ],
+            ),
           ),
         ],
       );
@@ -840,56 +966,45 @@ class ProfilePage extends StatelessWidget {
           ),
           child: Column(
             children: [
-              Row(
+              _AdaptiveStatGrid(
+                minTileWidth: 96,
                 children: [
-                  Expanded(
-                    child: _SummaryStatTile(
-                      label: 'Профиль',
-                      value: isVerified ? 'Готов' : 'Нужно',
-                      accent: isVerified
-                          ? const Color(0xFF059669)
-                          : const Color(0xFFF59E0B),
-                    ),
+                  _SummaryStatTile(
+                    label: 'Профиль',
+                    value: isVerified ? 'Готов' : 'Нужно',
+                    accent: isVerified
+                        ? const Color(0xFF059669)
+                        : const Color(0xFFF59E0B),
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _SummaryStatTile(
-                      label: 'Чаты',
-                      value: '${data.chats.length}',
-                      accent: const Color(0xFF2563EB),
-                    ),
+                  _SummaryStatTile(
+                    label: 'Чаты',
+                    value: '${data.chats.length}',
+                    accent: const Color(0xFF2563EB),
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _SummaryStatTile(
-                      label: 'Район',
-                      value: (profile['district'] as String? ?? 'Не указан')
-                          .split(' ')
-                          .first,
-                      accent: const Color(0xFF8B5CF6),
-                    ),
+                  _SummaryStatTile(
+                    label: 'Район',
+                    value: (profile['district'] as String? ?? 'Не указан')
+                        .split(' ')
+                        .first,
+                    accent: const Color(0xFF8B5CF6),
                   ),
                 ],
               ),
               const SizedBox(height: 14),
-              Row(
+              _AdaptiveStatGrid(
+                minTileWidth: 140,
                 children: [
-                  Expanded(
-                    child: _ProfileActionTile(
-                      icon: Icons.edit_outlined,
-                      label: 'Изменить',
-                      accent: const Color(0xFF2563EB),
-                      onTap: onEdit,
-                    ),
+                  _ProfileActionTile(
+                    icon: Icons.edit_outlined,
+                    label: 'Изменить',
+                    accent: const Color(0xFF2563EB),
+                    onTap: onEdit,
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _ProfileActionTile(
-                      icon: Icons.verified_user_outlined,
-                      label: 'Проверить',
-                      accent: const Color(0xFF059669),
-                      onTap: onVerification,
-                    ),
+                  _ProfileActionTile(
+                    icon: Icons.verified_user_outlined,
+                    label: 'Проверить',
+                    accent: const Color(0xFF059669),
+                    onTap: onVerification,
                   ),
                 ],
               ),
@@ -897,45 +1012,150 @@ class ProfilePage extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 14),
-        InfoCard(
-          icon: Icons.person_outline,
-          title: profile['name'] as String? ?? 'Пользователь',
-          subtitle:
-              '${profile['phone'] ?? ''} · ${profile['city']} · ${profile['district']}',
-          trailing: StatusPill(
-            icon: isVerified
-                ? Icons.verified_user_outlined
-                : Icons.shield_outlined,
-            label: isVerified ? 'Активен' : 'Заполнить',
-            tone: isVerified ? StatusTone.success : StatusTone.warning,
+        Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: const Color(0xFFE8EEF6)),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x0C0F172A),
+                blurRadius: 18,
+                offset: Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Column(
+            children: [
+              _ProfileSummaryRow(
+                icon: Icons.person_outline,
+                title: profile['name'] as String? ?? 'Пользователь',
+                subtitle:
+                    '${profile['phone'] ?? ''} · ${profile['city']} · ${profile['district']}',
+                trailing: StatusPill(
+                  icon: isVerified
+                      ? Icons.verified_user_outlined
+                      : Icons.shield_outlined,
+                  label: isVerified ? 'Активен' : 'Заполнить',
+                  tone: isVerified ? StatusTone.success : StatusTone.warning,
+                ),
+              ),
+              const SizedBox(height: 10),
+              _ProfileSummaryRow(
+                icon: Icons.manage_accounts_outlined,
+                title: isVerified
+                    ? 'Профиль заполнен'
+                    : 'Профиль стоит завершить',
+                subtitle: isVerified
+                    ? 'Основные данные сохранены и аккаунт готов к использованию.'
+                    : 'Проверьте имя, город и район, чтобы мастерам было проще с вами работать.',
+                onTap: onVerification,
+              ),
+              const SizedBox(height: 10),
+              _ProfileSummaryRow(
+                icon: Icons.chat_bubble_outline,
+                title: '${data.chats.length} активных чатов',
+                subtitle: data.chats.isEmpty
+                    ? 'Когда вы выберете мастера, диалоги появятся здесь.'
+                    : 'Все текущие договорённости с мастерами собраны в одном месте.',
+              ),
+              const SizedBox(height: 10),
+              _ProfileSummaryRow(
+                icon: Icons.assignment_outlined,
+                title: '${data.orders.length} заявок в аккаунте',
+                subtitle: data.orders.isEmpty
+                    ? 'После создания первой заявки история обращений появится здесь.'
+                    : 'История ваших заявок уже сохранена и доступна для просмотра.',
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 10),
-        InfoCard(
-          icon: Icons.manage_accounts_outlined,
-          title: isVerified ? 'Профиль заполнен' : 'Профиль стоит завершить',
-          subtitle: isVerified
-              ? 'Основные данные сохранены и аккаунт готов к использованию.'
-              : 'Проверьте имя, город и район, чтобы мастерам было проще с вами работать.',
-          onTap: onVerification,
-        ),
-        const SizedBox(height: 10),
-        InfoCard(
-          icon: Icons.chat_bubble_outline,
-          title: '${data.chats.length} активных чатов',
-          subtitle: data.chats.isEmpty
-              ? 'Когда вы выберете мастера, диалоги появятся здесь.'
-              : 'Все текущие договорённости с мастерами собраны в одном месте.',
-        ),
-        const SizedBox(height: 10),
-        InfoCard(
-          icon: Icons.assignment_outlined,
-          title: '${data.orders.length} заявок в аккаунте',
-          subtitle: data.orders.isEmpty
-              ? 'После создания первой заявки история обращений появится здесь.'
-              : 'История ваших заявок уже сохранена и доступна для просмотра.',
-        ),
       ],
+    );
+  }
+}
+
+class _ProfileSummaryRow extends StatelessWidget {
+  const _ProfileSummaryRow({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.trailing,
+    this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Widget? trailing;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0xFFF8FAFC),
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.primary.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                child: Icon(icon, color: Theme.of(context).colorScheme.primary),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFF0F172A),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: const Color(0xFF64748B),
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (trailing != null) ...[
+                const SizedBox(width: 12),
+                trailing!,
+              ] else if (onTap != null) ...[
+                const SizedBox(width: 12),
+                const Icon(
+                  Icons.arrow_forward_rounded,
+                  color: Color(0xFF94A3B8),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -945,10 +1165,14 @@ class CreateOrderScreen extends StatefulWidget {
     super.key,
     required this.apiClient,
     required this.categories,
+    this.initialCategory,
+    this.preferredMaster,
   });
 
   final ApiClient apiClient;
   final List<Map<String, dynamic>> categories;
+  final String? initialCategory;
+  final Map<String, dynamic>? preferredMaster;
 
   @override
   State<CreateOrderScreen> createState() => _CreateOrderScreenState();
@@ -986,7 +1210,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
   @override
   void initState() {
     super.initState();
-    _category = _categoryNames.first;
+    _category = widget.initialCategory ?? _categoryNames.first;
   }
 
   List<String> get _categoryNames {
@@ -1021,6 +1245,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
           'address': _address.text,
           'budget': _budget.text,
           'when': _when,
+          'preferredMasterId': widget.preferredMaster?['id'],
         },
       );
       final order = Map<String, dynamic>.from(
@@ -1128,18 +1353,18 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       'Проверьте заявку',
     ];
     final subtitles = [
-      'Чӣ бояд кард?',
-      'Дар куҷо иҷро шавад?',
-      'Кай лозим аст?',
-      'Буҷаи дархост',
-      'Санҷиши дархост',
+      'Кратко опишите задачу для мастера.',
+      'Укажите адрес или удобный район.',
+      'Выберите удобное время выполнения.',
+      'Добавьте бюджет или ожидаемую цену.',
+      'Проверьте детали перед публикацией.',
     ];
     return Scaffold(
-      appBar: AppBar(titleSpacing: 0, title: const Text('')),
+      appBar: AppBar(toolbarHeight: 0, automaticallyImplyLeading: false),
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
             child: Row(
               children: [
                 IconButton(
@@ -1164,6 +1389,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                         'Новая заявка',
                         style: Theme.of(context).textTheme.titleLarge?.copyWith(
                           fontWeight: FontWeight.w800,
+                          fontSize: 19,
                         ),
                       ),
                       Text(
@@ -1179,7 +1405,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(24, 8, 24, 0),
+            padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
             child: LinearProgressIndicator(
               value: progress,
               minHeight: 6,
@@ -1190,13 +1416,14 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
           ),
           Expanded(
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(24, 24, 24, 18),
+              padding: const EdgeInsets.fromLTRB(20, 22, 20, 18),
               children: [
                 Text(
                   titles[_step],
                   style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                     color: const Color(0xFF1F2940),
                     fontWeight: FontWeight.w800,
+                    fontSize: 18,
                   ),
                 ),
                 const SizedBox(height: 6),
@@ -1206,6 +1433,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                     color: const Color(0xFF94A3B8),
                     fontStyle: FontStyle.italic,
                     fontWeight: FontWeight.w500,
+                    fontSize: 13,
                   ),
                 ),
                 const SizedBox(height: 18),
@@ -1231,7 +1459,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
           SafeArea(
             top: false,
             child: Container(
-              padding: const EdgeInsets.fromLTRB(24, 14, 24, 18),
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 18),
               decoration: const BoxDecoration(
                 color: Colors.white,
                 border: Border(top: BorderSide(color: Color(0xFFE5EAF3))),
@@ -1249,7 +1477,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                 child: Text(
                   _saving
                       ? 'Публикация...'
-                      : (_step == 4 ? 'Опубликовать ->' : 'Далее ->'),
+                      : (_step == 4 ? 'Опубликовать' : 'Далее'),
                 ),
               ),
             ),
@@ -1261,6 +1489,10 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
 
   List<Widget> _buildTaskStep(BuildContext context) {
     return [
+      if (widget.preferredMaster != null) ...[
+        _PreferredMasterBanner(master: widget.preferredMaster!),
+        const SizedBox(height: 18),
+      ],
       Wrap(
         spacing: 8,
         runSpacing: 8,
@@ -1339,6 +1571,10 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
 
   List<Widget> _buildAddressStep(BuildContext context) {
     return [
+      if (widget.preferredMaster != null) ...[
+        _PreferredMasterBanner(master: widget.preferredMaster!),
+        const SizedBox(height: 16),
+      ],
       DropdownButtonFormField<String>(
         initialValue: _district,
         decoration: const InputDecoration(
@@ -1373,6 +1609,10 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
 
   List<Widget> _buildScheduleStep(BuildContext context) {
     return [
+      if (widget.preferredMaster != null) ...[
+        _PreferredMasterBanner(master: widget.preferredMaster!),
+        const SizedBox(height: 16),
+      ],
       Wrap(
         spacing: 10,
         runSpacing: 10,
@@ -1404,6 +1644,10 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       'жду предложений',
     ];
     return [
+      if (widget.preferredMaster != null) ...[
+        _PreferredMasterBanner(master: widget.preferredMaster!),
+        const SizedBox(height: 16),
+      ],
       Wrap(
         spacing: 10,
         runSpacing: 10,
@@ -1431,6 +1675,37 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
 
   List<Widget> _buildReviewStep(BuildContext context) {
     return [
+      if (widget.preferredMaster != null) ...[
+        InfoCard(
+          icon: Icons.person_pin_circle_outlined,
+          title: 'Предпочтительный мастер',
+          subtitle:
+              '${widget.preferredMaster!['name'] ?? 'Мастер'} · ${widget.preferredMaster!['service'] ?? 'Специалист'}',
+          footer: Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Wrap(
+              spacing: 10,
+              runSpacing: 8,
+              children: [
+                _InlineBadge(
+                  icon: Icons.star_rounded,
+                  text:
+                      '${widget.preferredMaster!['rating'] ?? 0} (${widget.preferredMaster!['reviews'] ?? 0})',
+                  color: const Color(0xFFF59E0B),
+                ),
+                _InlineBadge(
+                  icon: Icons.payments_outlined,
+                  text:
+                      widget.preferredMaster!['price'] as String? ??
+                      'Цена по договорённости',
+                  color: const Color(0xFF059669),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+      ],
       InfoCard(
         icon: Icons.build_circle_outlined,
         title: _derivedTitle,
@@ -1615,7 +1890,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('')),
+      appBar: AppBar(title: const Text('Детали заявки')),
       body: FutureBuilder<Map<String, dynamic>>(
         future: _future,
         builder: (context, snapshot) {
@@ -1639,81 +1914,119 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                       selectedMasterId,
                   orElse: () => null,
                 );
+          final hasPreferredMaster =
+              (order['preferredMasterId'] as num?) != null;
           return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 6, 16, 100),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
             children: [
-              Row(
-                children: [
-                  IconButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.arrow_back),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          order['title'] as String? ?? 'Заявка',
-                          style: Theme.of(context).textTheme.titleLarge
-                              ?.copyWith(fontWeight: FontWeight.w800),
-                        ),
-                        Text(
-                          '${order['category']} · р-н ${order['district']}',
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(color: const Color(0xFF64748B)),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 18,
-                  vertical: 16,
-                ),
+                padding: const EdgeInsets.all(18),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  border: Border.all(color: const Color(0xFFE8EEF6)),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x0C0F172A),
+                      blurRadius: 18,
+                      offset: Offset(0, 10),
+                    ),
+                  ],
                 ),
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (widget.isMaster) ...[
-                      _MetaInline(
-                        icon: Icons.payments_outlined,
-                        text: order['budget'] as String? ?? 'Без бюджета',
-                        color: const Color(0xFF059669),
+                    Text(
+                      order['title'] as String? ?? 'Заявка',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFF0F172A),
                       ),
-                      const SizedBox(width: 18),
-                      _MetaInline(
-                        icon: Icons.schedule_outlined,
-                        text: order['when'] as String? ?? 'Срок не указан',
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '${order['category']} · р-н ${order['district']}',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: const Color(0xFF64748B),
+                        fontWeight: FontWeight.w600,
                       ),
-                    ] else ...[
-                      _MetaInline(
-                        icon: Icons.visibility_outlined,
-                        text: '${order['views'] ?? 12} просмотров',
-                      ),
-                      const SizedBox(width: 18),
-                      _MetaInline(
-                        icon: Icons.chat_bubble_outline,
-                        text: '${responses.length} отклика',
-                        color: const Color(0xFF2563EB),
-                      ),
-                    ],
-                    const Spacer(),
-                    StatusPill(
-                      icon: _orderStatusIcon(order['status'] as String?),
-                      label: _orderStatusLabel(order['status'] as String?),
-                      tone: _orderStatusTone(order['status'] as String?),
+                    ),
+                    const SizedBox(height: 14),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 10,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        if (widget.isMaster) ...[
+                          _MetaInline(
+                            icon: Icons.payments_outlined,
+                            text: order['budget'] as String? ?? 'Без бюджета',
+                            color: const Color(0xFF059669),
+                          ),
+                          _MetaInline(
+                            icon: Icons.schedule_outlined,
+                            text: order['when'] as String? ?? 'Срок не указан',
+                          ),
+                        ] else ...[
+                          _MetaInline(
+                            icon: Icons.visibility_outlined,
+                            text: '${order['views'] ?? 12} просмотров',
+                          ),
+                          _MetaInline(
+                            icon: Icons.chat_bubble_outline,
+                            text: '${responses.length} отклика',
+                            color: const Color(0xFF2563EB),
+                          ),
+                        ],
+                        StatusPill(
+                          icon: _orderStatusIcon(order['status'] as String?),
+                          label: _orderStatusLabel(order['status'] as String?),
+                          tone: _orderStatusTone(order['status'] as String?),
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ),
               const SizedBox(height: 14),
+              if (!widget.isMaster &&
+                  hasPreferredMaster &&
+                  selectedResponse == null) ...[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEEF6FF),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFFD9E9FF)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.person_pin_circle_outlined,
+                        size: 18,
+                        color: Color(0xFF2563EB),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Для этой заявки уже указан предпочтительный мастер. Можно дождаться его отклика или выбрать другого исполнителя ниже.',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: const Color(0xFF1D4ED8),
+                                fontWeight: FontWeight.w700,
+                                height: 1.35,
+                              ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+              ],
               if (!widget.isMaster && selectedResponse != null) ...[
                 InfoCard(
                   icon: Icons.verified_user_outlined,
@@ -1744,7 +2057,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                 const SizedBox(height: 14),
               ],
               Container(
-                padding: const EdgeInsets.all(26),
+                padding: const EdgeInsets.all(22),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(30),
@@ -1842,13 +2155,22 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
           );
         },
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _showResponseSheet,
-        icon: const Icon(Icons.reply_outlined),
-        label: Text(widget.isMaster ? 'Откликнуться' : 'Отклик'),
-      ),
+      floatingActionButton: widget.isMaster
+          ? FloatingActionButton.extended(
+              onPressed: _showResponseSheet,
+              icon: const Icon(Icons.reply_outlined),
+              label: const Text('Откликнуться'),
+            )
+          : null,
     );
   }
+}
+
+class _MasterDetailData {
+  const _MasterDetailData({required this.master, required this.reviews});
+
+  final Map<String, dynamic> master;
+  final List<Map<String, dynamic>> reviews;
 }
 
 class MasterDetailScreen extends StatefulWidget {
@@ -1856,28 +2178,97 @@ class MasterDetailScreen extends StatefulWidget {
     super.key,
     required this.apiClient,
     required this.masterId,
+    this.categories = const [],
   });
 
   final ApiClient apiClient;
   final int masterId;
+  final List<Map<String, dynamic>> categories;
 
   @override
   State<MasterDetailScreen> createState() => _MasterDetailScreenState();
 }
 
 class _MasterDetailScreenState extends State<MasterDetailScreen> {
-  late Future<Map<String, dynamic>> _future;
+  late Future<_MasterDetailData> _future;
 
   @override
   void initState() {
     super.initState();
-    _future = widget.apiClient.getJson('/masters/${widget.masterId}');
+    _future = _load();
+  }
+
+  Future<_MasterDetailData> _load() async {
+    final results = await Future.wait([
+      widget.apiClient.getJson('/masters/${widget.masterId}'),
+      widget.apiClient.getJson('/masters/${widget.masterId}/reviews'),
+    ]);
+    return _MasterDetailData(
+      master: Map<String, dynamic>.from(
+        results[0]['master'] as Map? ?? const <String, dynamic>{},
+      ),
+      reviews: asMapList(results[1]['reviews']),
+    );
+  }
+
+  Future<void> _openCreateOrder(Map<String, dynamic> master) async {
+    final service = master['service'] as String? ?? 'Сантехника';
+    final categories = widget.categories.isEmpty
+        ? [
+            {'name': service},
+          ]
+        : widget.categories;
+    if (!mounted) return;
+    await Navigator.of(context).push<Map<String, dynamic>>(
+      MaterialPageRoute(
+        builder: (_) => CreateOrderScreen(
+          apiClient: widget.apiClient,
+          categories: categories,
+          initialCategory: service,
+          preferredMaster: master,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _startContactFlow(Map<String, dynamic> master) async {
+    final masterName = master['name'] as String? ?? '';
+    try {
+      final chatsData = await widget.apiClient.getJson('/chats');
+      final chats = asMapList(chatsData['chats']);
+      final existing = chats.cast<Map<String, dynamic>?>().firstWhere(
+        (chat) => chat?['master'] == masterName,
+        orElse: () => null,
+      );
+      if (existing != null && mounted) {
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => ChatScreen(
+              apiClient: widget.apiClient,
+              chatId: existing['id'] as int,
+              title: masterName,
+              orderTitle: existing['orderTitle'] as String? ?? 'Заказ',
+            ),
+          ),
+        );
+        return;
+      }
+    } catch (_) {}
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Создайте заявку с этим мастером, и после публикации сможете продолжить общение по заказу.',
+        ),
+      ),
+    );
+    await _openCreateOrder(master);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: FutureBuilder<Map<String, dynamic>>(
+      body: FutureBuilder<_MasterDetailData>(
         future: _future,
         builder: (context, snapshot) {
           if (snapshot.connectionState != ConnectionState.done) {
@@ -1886,14 +2277,12 @@ class _MasterDetailScreenState extends State<MasterDetailScreen> {
           if (snapshot.hasError) {
             return ErrorState(
               message: snapshot.error.toString(),
-              onRetry: () async => setState(
-                () => _future = widget.apiClient.getJson(
-                  '/masters/${widget.masterId}',
-                ),
-              ),
+              onRetry: () async => setState(() => _future = _load()),
             );
           }
-          final master = snapshot.data!['master'] as Map<String, dynamic>;
+          final payload = snapshot.data!;
+          final master = payload.master;
+          final masterReviews = payload.reviews;
           final skills = List<String>.from(
             master['skills'] as List? ?? const [],
           );
@@ -1909,214 +2298,106 @@ class _MasterDetailScreenState extends State<MasterDetailScreen> {
           final ratingText = '${master['rating'] ?? 0}';
           final reviews = (master['reviews'] as num?)?.toInt() ?? 0;
           return Scaffold(
-            body: Stack(
+            appBar: AppBar(
+              titleSpacing: 0,
+              title: const Text('Профиль мастера'),
+            ),
+            body: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 112),
               children: [
-                ListView(
-                  padding: EdgeInsets.zero,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.fromLTRB(16, 54, 16, 26),
-                      decoration: const BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [Color(0xFF141B31), Color(0xFF253D8F)],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          IconButton(
-                            onPressed: () => Navigator.of(context).pop(),
-                            icon: const Icon(
-                              Icons.arrow_back,
-                              color: Colors.white,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Container(
-                                width: 110,
-                                height: 110,
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(34),
-                                  gradient: LinearGradient(
-                                    colors: [
-                                      accent,
-                                      accent.withValues(alpha: 0.72),
-                                    ],
-                                  ),
-                                  border: Border.all(
-                                    color: Colors.white.withValues(alpha: 0.25),
-                                    width: 2,
-                                  ),
-                                ),
-                                alignment: Alignment.center,
-                                child: Text(
-                                  initials,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 30,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 18),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      name,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .headlineSmall
-                                          ?.copyWith(
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.w800,
-                                          ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Wrap(
-                                      spacing: 8,
-                                      runSpacing: 8,
-                                      children: [
-                                        _HeaderBadge(
-                                          label: verified
-                                              ? 'Проверенный профиль'
-                                              : 'Без верификации',
-                                        ),
-                                        _HeaderBadge(label: service),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 10),
-                                    Row(
-                                      children: [
-                                        const Icon(
-                                          Icons.star,
-                                          color: Color(0xFFFBBF24),
-                                          size: 20,
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          '$ratingText ($reviews отзывов)',
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 22),
-                          Container(
-                            padding: const EdgeInsets.symmetric(vertical: 20),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.08),
-                              borderRadius: BorderRadius.circular(26),
-                            ),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: _StatColumn(
-                                    value: ratingText,
-                                    label: 'рейтинг',
-                                    inverted: true,
-                                  ),
-                                ),
-                                Expanded(
-                                  child: _StatColumn(
-                                    value: '$reviews',
-                                    label: 'отзывов',
-                                    inverted: true,
-                                  ),
-                                ),
-                                Expanded(
-                                  child: _StatColumn(
-                                    value: verified ? 'Да' : 'Нет',
-                                    label: 'проверка',
-                                    inverted: true,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(28),
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF18213A), Color(0xFF2847A6)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
                     ),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 22, 16, 120),
-                      child: Column(
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x160F172A),
+                        blurRadius: 22,
+                        offset: Offset(0, 12),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(22),
+                            width: 88,
+                            height: 88,
                             decoration: BoxDecoration(
-                              color: Colors.white,
                               borderRadius: BorderRadius.circular(28),
-                              boxShadow: const [
-                                BoxShadow(
-                                  color: Color(0x120F172A),
-                                  blurRadius: 18,
-                                  offset: Offset(0, 8),
-                                ),
-                              ],
+                              gradient: LinearGradient(
+                                colors: [
+                                  accent,
+                                  accent.withValues(alpha: 0.72),
+                                ],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ),
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.22),
+                              ),
                             ),
+                            alignment: Alignment.center,
+                            child: Text(
+                              initials,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 28,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Row(
+                                Text(
+                                  name,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .headlineSmall
+                                      ?.copyWith(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w800,
+                                        height: 1.1,
+                                      ),
+                                ),
+                                const SizedBox(height: 10),
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
                                   children: [
-                                    Expanded(
-                                      child: _MasterFactTile(
-                                        icon: Icons.payments_outlined,
-                                        title: 'Цена',
-                                        value: price,
-                                        accent: const Color(0xFF059669),
-                                      ),
+                                    _HeaderBadge(
+                                      label: verified
+                                          ? 'Проверенный профиль'
+                                          : 'Без верификации',
                                     ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: _MasterFactTile(
-                                        icon:
-                                            Icons.home_repair_service_outlined,
-                                        title: 'Специализация',
-                                        value: service,
-                                        accent: accent,
-                                      ),
-                                    ),
+                                    _HeaderBadge(label: service),
                                   ],
                                 ),
                                 const SizedBox(height: 12),
                                 Row(
                                   children: [
-                                    Expanded(
-                                      child: _MasterFactTile(
-                                        icon: Icons.verified_user_outlined,
-                                        title: 'Доверие',
-                                        value: verified
-                                            ? 'Профиль проверен'
-                                            : 'Проверка не завершена',
-                                        accent: verified
-                                            ? const Color(0xFF2563EB)
-                                            : const Color(0xFFF59E0B),
-                                      ),
+                                    const Icon(
+                                      Icons.star_rounded,
+                                      color: Color(0xFFFBBF24),
+                                      size: 18,
                                     ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: _MasterFactTile(
-                                        icon: Icons.rate_review_outlined,
-                                        title: 'Отзывы',
-                                        value: '$reviews мнений',
-                                        accent: const Color(0xFF8B5CF6),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      '$ratingText ($reviews отзывов)',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w700,
                                       ),
                                     ),
                                   ],
@@ -2124,179 +2405,204 @@ class _MasterDetailScreenState extends State<MasterDetailScreen> {
                               ],
                             ),
                           ),
-                          const SizedBox(height: 28),
-                          Text(
-                            'ПОЧЕМУ ВЫБИРАЮТ',
-                            style: Theme.of(context).textTheme.titleMedium
-                                ?.copyWith(color: const Color(0xFF94A3B8)),
-                          ),
-                          const SizedBox(height: 14),
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(22),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(28),
-                              boxShadow: const [
-                                BoxShadow(
-                                  color: Color(0x120F172A),
-                                  blurRadius: 18,
-                                  offset: Offset(0, 8),
-                                ),
-                              ],
-                            ),
-                            child: Column(
-                              children: [
-                                _MasterReasonRow(
-                                  icon: Icons.star_outline,
-                                  text:
-                                      'Высокая оценка $ratingText на основе $reviews отзывов клиентов.',
-                                ),
-                                const SizedBox(height: 14),
-                                _MasterReasonRow(
-                                  icon: _categoryIcon(service),
-                                  text:
-                                      'Специализируется на категории "$service" и смежных задачах.',
-                                ),
-                                const SizedBox(height: 14),
-                                _MasterReasonRow(
-                                  icon: verified
-                                      ? Icons.verified_outlined
-                                      : Icons.info_outline,
-                                  text: verified
-                                      ? 'Профиль прошёл проверку, это повышает доверие перед выбором.'
-                                      : 'Профиль пока без проверки, поэтому стоит ориентироваться на отзывы и диалог.',
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 28),
-                          Text(
-                            'УСЛУГИ',
-                            style: Theme.of(context).textTheme.titleMedium
-                                ?.copyWith(color: const Color(0xFF94A3B8)),
-                          ),
-                          const SizedBox(height: 14),
-                          Wrap(
-                            spacing: 10,
-                            runSpacing: 10,
-                            children: [
-                              _SelectionChip(
-                                icon: _categoryIcon(service),
-                                label: service,
-                                active: true,
-                                onTap: () {},
-                              ),
-                              for (final skill in skills)
-                                _TextTag(label: skill),
-                            ],
-                          ),
-                          const SizedBox(height: 28),
-                          Text(
-                            'О МАСТЕРЕ',
-                            style: Theme.of(context).textTheme.titleMedium
-                                ?.copyWith(color: const Color(0xFF94A3B8)),
-                          ),
-                          const SizedBox(height: 14),
-                          Container(
-                            padding: const EdgeInsets.all(22),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(28),
-                              boxShadow: const [
-                                BoxShadow(
-                                  color: Color(0x120F172A),
-                                  blurRadius: 18,
-                                  offset: Offset(0, 8),
-                                ),
-                              ],
-                            ),
-                            child: Text(
-                              master['bio'] as String? ?? '',
-                              style: Theme.of(context).textTheme.titleMedium
-                                  ?.copyWith(
-                                    color: const Color(0xFF475569),
-                                    height: 1.55,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                            ),
-                          ),
-                          const SizedBox(height: 28),
-                          Text(
-                            'ПОРТФОЛИО',
-                            style: Theme.of(context).textTheme.titleMedium
-                                ?.copyWith(color: const Color(0xFF94A3B8)),
-                          ),
-                          const SizedBox(height: 14),
-                          if (portfolio.isEmpty)
-                            const EmptyState(
-                              icon: Icons.photo_library_outlined,
-                              text: 'Портфолио пока не добавлено',
-                              subtitle:
-                                  'Можно ориентироваться на отзывы, специализацию и описание мастера.',
-                            )
-                          else ...[
-                            SizedBox(
-                              height: 184,
-                              child: ListView.separated(
-                                scrollDirection: Axis.horizontal,
-                                itemCount: portfolio.length,
-                                separatorBuilder: (_, _) =>
-                                    const SizedBox(width: 12),
-                                itemBuilder: (context, index) {
-                                  final item = portfolio[index];
-                                  return Container(
-                                    width: 184,
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(28),
-                                      gradient: LinearGradient(
-                                        colors: [
-                                          _portfolioColor(index),
-                                          _portfolioColor(
-                                            index,
-                                          ).withValues(alpha: 0.7),
-                                        ],
-                                      ),
-                                    ),
-                                    alignment: Alignment.center,
-                                    child: Text(
-                                      item,
-                                      style: const TextStyle(fontSize: 42),
-                                    ),
-                                  );
-                                },
-                              ),
-                            ),
-                            const SizedBox(height: 18),
-                            Text(
-                              '${portfolio.length} элементов в портфолио',
-                              style: Theme.of(context).textTheme.bodyMedium
-                                  ?.copyWith(color: const Color(0xFF94A3B8)),
-                            ),
-                          ],
                         ],
                       ),
+                      const SizedBox(height: 18),
+                      _AdaptiveStatGrid(
+                        minTileWidth: 96,
+                        children: [
+                          MetricCard(
+                            label: 'Рейтинг',
+                            value: ratingText,
+                            isInverted: true,
+                          ),
+                          MetricCard(
+                            label: 'Отзывы',
+                            value: '$reviews',
+                            isInverted: true,
+                          ),
+                          MetricCard(
+                            label: 'Проверка',
+                            value: verified ? 'Да' : 'Нет',
+                            isInverted: true,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                _AdaptiveStatGrid(
+                  minTileWidth: 150,
+                  children: [
+                    _MasterFactTile(
+                      icon: Icons.payments_outlined,
+                      title: 'Цена',
+                      value: price,
+                      accent: const Color(0xFF059669),
+                    ),
+                    _MasterFactTile(
+                      icon: Icons.home_repair_service_outlined,
+                      title: 'Специализация',
+                      value: service,
+                      accent: accent,
+                    ),
+                    _MasterFactTile(
+                      icon: verified
+                          ? Icons.verified_user_outlined
+                          : Icons.shield_outlined,
+                      title: 'Статус',
+                      value: verified ? 'Профиль подтверждён' : 'Без проверки',
+                      accent: verified
+                          ? const Color(0xFF2563EB)
+                          : const Color(0xFFF59E0B),
+                    ),
+                    _MasterFactTile(
+                      icon: Icons.rate_review_outlined,
+                      title: 'Отклик клиентов',
+                      value: '$reviews отзывов',
+                      accent: const Color(0xFF8B5CF6),
                     ),
                   ],
                 ),
-                Positioned(
-                  left: 16,
-                  right: 16,
-                  bottom: 16,
-                  child: SafeArea(
-                    top: false,
-                    child: FilledButton.icon(
+                const SizedBox(height: 20),
+                SectionTitle(
+                  title: 'О мастере',
+                  subtitle:
+                      'Кратко о специализации, опыте и том, что важно знать перед выбором.',
+                ),
+                const SizedBox(height: 12),
+                InfoCard(
+                  icon: Icons.description_outlined,
+                  title: service,
+                  subtitle:
+                      master['bio'] as String? ?? 'Описание пока не добавлено.',
+                ),
+                const SizedBox(height: 20),
+                SectionTitle(
+                  title: 'Услуги',
+                  subtitle: 'Основное направление и дополнительные задачи.',
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    _SelectionChip(
+                      icon: _categoryIcon(service),
+                      label: service,
+                      active: true,
+                      onTap: () {},
+                    ),
+                    for (final skill in skills) _CompactSkillTag(label: skill),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                SectionTitle(
+                  title: 'Отзывы клиентов',
+                  subtitle:
+                      'Посмотрите, что пишут заказчики о скорости, качестве и общении.',
+                ),
+                const SizedBox(height: 12),
+                if (masterReviews.isEmpty)
+                  const EmptyState(
+                    icon: Icons.reviews_outlined,
+                    text: 'Отзывов пока нет',
+                    subtitle:
+                        'Этот мастер ещё не получил публичных отзывов от клиентов.',
+                  )
+                else ...[
+                  for (final review in masterReviews) ...[
+                    _MasterReviewCard(review: review),
+                    const SizedBox(height: 10),
+                  ],
+                ],
+                const SizedBox(height: 20),
+                SectionTitle(
+                  title: 'Портфолио',
+                  subtitle: 'Примеры работ по этой специализации.',
+                ),
+                const SizedBox(height: 12),
+                if (portfolio.isEmpty)
+                  const EmptyState(
+                    icon: Icons.photo_library_outlined,
+                    text: 'Портфолио пока не добавлено',
+                    subtitle:
+                        'Можно ориентироваться на отзывы, специализацию и описание мастера.',
+                  )
+                else ...[
+                  SizedBox(
+                    height: 156,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: portfolio.length,
+                      separatorBuilder: (_, _) => const SizedBox(width: 12),
+                      itemBuilder: (context, index) {
+                        final item = portfolio[index];
+                        return Container(
+                          width: 156,
+                          padding: const EdgeInsets.all(18),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(24),
+                            gradient: LinearGradient(
+                              colors: [
+                                _portfolioColor(index),
+                                _portfolioColor(index).withValues(alpha: 0.72),
+                              ],
+                            ),
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Color(0x120F172A),
+                                blurRadius: 16,
+                                offset: Offset(0, 10),
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(item, style: const TextStyle(fontSize: 34)),
+                              const Spacer(),
+                              Text(
+                                'Работа ${index + 1}',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            bottomNavigationBar: SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                child: _AdaptiveStatGrid(
+                  minTileWidth: 150,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: () => _startContactFlow(master),
+                      icon: const Icon(Icons.chat_bubble_outline),
+                      label: const Text('Написать'),
+                    ),
+                    FilledButton.icon(
                       style: FilledButton.styleFrom(
                         backgroundColor: const Color(0xFF2B5DE0),
                         foregroundColor: Colors.white,
                       ),
-                      onPressed: () => Navigator.of(context).pop(),
-                      icon: const Icon(Icons.arrow_back_outlined),
-                      label: const Text('Вернуться к выбору'),
+                      onPressed: () => _openCreateOrder(master),
+                      icon: const Icon(Icons.assignment_turned_in_outlined),
+                      label: const Text('Выбрать мастера'),
                     ),
-                  ),
+                  ],
                 ),
-              ],
+              ),
             ),
           );
         },
@@ -3419,13 +3725,13 @@ class OrderTile extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(22),
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.all(18),
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(24),
+            borderRadius: BorderRadius.circular(22),
             border: Border.all(color: const Color(0xFFE8EEF6)),
             boxShadow: const [
               BoxShadow(
@@ -3588,64 +3894,90 @@ class _OrdersSummaryCard extends StatelessWidget {
       ),
       child: Column(
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Ваши заявки',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        color: const Color(0xFF0F172A),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      orders.isEmpty
-                          ? 'Здесь появятся созданные вами обращения.'
-                          : 'Следите за статусами, откликами и активностью мастеров.',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: const Color(0xFF667085),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-              FilledButton.icon(
-                onPressed: onCreateOrder,
-                icon: const Icon(Icons.add, size: 18),
-                label: const Text('Создать'),
-              ),
-            ],
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final compact = constraints.maxWidth < 360;
+              return compact
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Ваши заявки',
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(
+                                fontWeight: FontWeight.w800,
+                                color: const Color(0xFF0F172A),
+                              ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          orders.isEmpty
+                              ? 'Здесь появятся созданные вами обращения.'
+                              : 'Следите за статусами, откликами и активностью мастеров.',
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(color: const Color(0xFF667085)),
+                        ),
+                        const SizedBox(height: 12),
+                        FilledButton.icon(
+                          onPressed: onCreateOrder,
+                          icon: const Icon(Icons.add, size: 18),
+                          label: const Text('Создать'),
+                        ),
+                      ],
+                    )
+                  : Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Ваши заявки',
+                                style: Theme.of(context).textTheme.titleMedium
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.w800,
+                                      color: const Color(0xFF0F172A),
+                                    ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                orders.isEmpty
+                                    ? 'Здесь появятся созданные вами обращения.'
+                                    : 'Следите за статусами, откликами и активностью мастеров.',
+                                style: Theme.of(context).textTheme.bodyMedium
+                                    ?.copyWith(color: const Color(0xFF667085)),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        FilledButton.icon(
+                          onPressed: onCreateOrder,
+                          icon: const Icon(Icons.add, size: 18),
+                          label: const Text('Создать'),
+                        ),
+                      ],
+                    );
+            },
           ),
           const SizedBox(height: 16),
-          Row(
+          _AdaptiveStatGrid(
+            minTileWidth: 96,
             children: [
-              Expanded(
-                child: _SummaryStatTile(
-                  label: 'Всего',
-                  value: '${orders.length}',
-                  accent: const Color(0xFF0F172A),
-                ),
+              _SummaryStatTile(
+                label: 'Всего',
+                value: '${orders.length}',
+                accent: const Color(0xFF0F172A),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _SummaryStatTile(
-                  label: 'Активные',
-                  value: '$activeCount',
-                  accent: const Color(0xFF059669),
-                ),
+              _SummaryStatTile(
+                label: 'Активные',
+                value: '$activeCount',
+                accent: const Color(0xFF059669),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _SummaryStatTile(
-                  label: 'Отклики',
-                  value: '$totalResponses',
-                  accent: const Color(0xFF2563EB),
-                ),
+              _SummaryStatTile(
+                label: 'Отклики',
+                value: '$totalResponses',
+                accent: const Color(0xFF2563EB),
               ),
             ],
           ),
@@ -3735,29 +4067,30 @@ class _CustomerHeroCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'НУЖНА ПОМОЩЬ ПО ДОМУ?',
+                'НУЖЕН МАСТЕР?',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: const Color(0xFFD8E6FF),
                   fontWeight: FontWeight.w700,
-                  letterSpacing: 0.2,
+                  fontSize: 12,
                 ),
               ),
               const SizedBox(height: 10),
               Text(
-                'Найди мастера быстро\nи без лишних звонков',
+                'Найдите мастера\nза пару минут',
                 style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                   color: Colors.white,
                   fontWeight: FontWeight.w800,
-                  fontSize: 20,
-                  height: 1.18,
+                  fontSize: 18,
+                  height: 1.16,
                 ),
               ),
               const SizedBox(height: 10),
               Text(
-                'Опиши задачу, укажи адрес и получи отклики от подходящих мастеров.',
+                'Создайте заявку и получите отклики от подходящих специалистов.',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: Colors.white.withValues(alpha: 0.84),
-                  height: 1.35,
+                  fontSize: 13,
+                  height: 1.32,
                 ),
               ),
               const SizedBox(height: 20),
@@ -3765,23 +4098,23 @@ class _CustomerHeroCard extends StatelessWidget {
                 children: [
                   FilledButton.icon(
                     style: FilledButton.styleFrom(
-                      minimumSize: const Size(0, 48),
+                      minimumSize: const Size(0, 44),
                       backgroundColor: Colors.white,
                       foregroundColor: const Color(0xFF2456DF),
-                      padding: const EdgeInsets.symmetric(horizontal: 22),
+                      padding: const EdgeInsets.symmetric(horizontal: 18),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(16),
                       ),
                     ),
                     onPressed: onCreateOrder,
                     icon: const Icon(Icons.add, size: 18),
-                    label: const Text('Создать заявку'),
+                    label: const Text('Создать'),
                   ),
                   const SizedBox(width: 12),
                   Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 10,
+                      horizontal: 10,
+                      vertical: 9,
                     ),
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.12),
@@ -3795,6 +4128,7 @@ class _CustomerHeroCard extends StatelessWidget {
                       style: Theme.of(context).textTheme.labelLarge?.copyWith(
                         color: Colors.white,
                         fontWeight: FontWeight.w700,
+                        fontSize: 12,
                       ),
                     ),
                   ),
@@ -3879,7 +4213,7 @@ class _CategoryTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+          padding: const EdgeInsets.fromLTRB(8, 12, 8, 10),
           decoration: BoxDecoration(
             color: const Color(0xFFFCFDFE),
             borderRadius: BorderRadius.circular(20),
@@ -3893,27 +4227,32 @@ class _CategoryTile extends StatelessWidget {
             ],
           ),
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisAlignment: MainAxisAlignment.start,
             children: [
               Container(
-                width: 58,
-                height: 58,
+                width: 52,
+                height: 52,
                 decoration: BoxDecoration(
                   color: color.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(18),
+                  borderRadius: BorderRadius.circular(16),
                 ),
-                child: Icon(icon, color: color, size: 26),
+                child: Icon(icon, color: color, size: 24),
               ),
-              const SizedBox(height: 12),
-              Text(
-                label,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF1F2940),
+              const SizedBox(height: 10),
+              Expanded(
+                child: Center(
+                  child: Text(
+                    label,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF1F2940),
+                      height: 1.2,
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -4008,8 +4347,8 @@ class _QuickActionTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         onTap: onTap,
         child: Container(
-          constraints: const BoxConstraints(minHeight: 108),
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
+          constraints: const BoxConstraints(minHeight: 96),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(20),
@@ -4034,12 +4373,12 @@ class _QuickActionTile extends StatelessWidget {
                 ),
                 child: Icon(icon, color: accent, size: 20),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
               Text(
                 label,
                 textAlign: TextAlign.center,
                 style: const TextStyle(
-                  fontSize: 12,
+                  fontSize: 11,
                   fontWeight: FontWeight.w700,
                   color: Color(0xFF1F2940),
                 ),
@@ -4066,10 +4405,10 @@ class _OverviewSummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(22),
         border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
       child: Row(
@@ -4117,7 +4456,8 @@ class _SummaryStatTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      constraints: const BoxConstraints(minHeight: 104),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
@@ -4134,17 +4474,24 @@ class _SummaryStatTile extends StatelessWidget {
           const SizedBox(height: 12),
           Text(
             value,
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
               fontWeight: FontWeight.w800,
               color: const Color(0xFF0F172A),
+              fontSize: 18,
             ),
           ),
           const SizedBox(height: 2),
           Text(
             label,
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(color: const Color(0xFF64748B)),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: const Color(0xFF64748B),
+              fontSize: 13,
+              height: 1.2,
+            ),
           ),
         ],
       ),
@@ -4173,6 +4520,7 @@ class _ProfileActionTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(18),
         onTap: onTap,
         child: Container(
+          constraints: const BoxConstraints(minHeight: 72),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
           decoration: BoxDecoration(
             color: Colors.white,
@@ -4194,9 +4542,12 @@ class _ProfileActionTile extends StatelessWidget {
               Expanded(
                 child: Text(
                   label,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: const Color(0xFF0F172A),
                     fontWeight: FontWeight.w700,
+                    height: 1.2,
                   ),
                 ),
               ),
@@ -4230,11 +4581,11 @@ class _FeaturedMasterCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 214,
-        padding: const EdgeInsets.all(18),
+        width: 208,
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(22),
           border: Border.all(color: const Color(0xFFE8EEF6)),
           boxShadow: const [
             BoxShadow(
@@ -4250,10 +4601,10 @@ class _FeaturedMasterCard extends StatelessWidget {
             Row(
               children: [
                 Container(
-                  width: 68,
-                  height: 68,
+                  width: 60,
+                  height: 60,
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(22),
+                    borderRadius: BorderRadius.circular(18),
                     gradient: LinearGradient(
                       colors: [accent, accent.withValues(alpha: 0.75)],
                       begin: Alignment.topLeft,
@@ -4264,7 +4615,7 @@ class _FeaturedMasterCard extends StatelessWidget {
                   child: Text(
                     initials,
                     style: const TextStyle(
-                      fontSize: 21,
+                      fontSize: 18,
                       fontWeight: FontWeight.w800,
                       color: Colors.white,
                     ),
@@ -4303,26 +4654,30 @@ class _FeaturedMasterCard extends StatelessWidget {
                   ),
               ],
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 12),
             Text(
               name,
-              maxLines: 1,
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.w800,
                 color: const Color(0xFF0F172A),
+                fontSize: 15,
+                height: 1.15,
               ),
             ),
             const SizedBox(height: 4),
             Text(
               service,
-              maxLines: 1,
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: const Color(0xFF667085)),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: const Color(0xFF667085),
+                fontSize: 13,
+                height: 1.2,
+              ),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
@@ -4331,6 +4686,7 @@ class _FeaturedMasterCard extends StatelessWidget {
                 border: Border.all(color: const Color(0xFFE6ECF5)),
               ),
               child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   const Icon(
                     Icons.star_rounded,
@@ -4350,11 +4706,16 @@ class _FeaturedMasterCard extends StatelessWidget {
                     style: const TextStyle(color: Color(0xFF98A2B3)),
                   ),
                   const Spacer(),
-                  Text(
-                    price,
-                    style: const TextStyle(
-                      color: Color(0xFF2563EB),
-                      fontWeight: FontWeight.w800,
+                  Flexible(
+                    child: Text(
+                      price,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.right,
+                      style: const TextStyle(
+                        color: Color(0xFF2563EB),
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
                 ],
@@ -4426,135 +4787,111 @@ class _MasterListCard extends StatelessWidget {
               ),
             ],
           ),
-          child: Row(
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 54,
-                height: 54,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(18),
-                  gradient: LinearGradient(
-                    colors: [accent, accent.withValues(alpha: 0.72)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 58,
+                    height: 58,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(18),
+                      gradient: LinearGradient(
+                        colors: [accent, accent.withValues(alpha: 0.72)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      _initials(name),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 18,
+                      ),
+                    ),
                   ),
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  _initials(name),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 18,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(
-                          child: Text(
-                            name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.titleMedium
-                                ?.copyWith(
-                                  fontWeight: FontWeight.w800,
-                                  color: const Color(0xFF0F172A),
-                                ),
-                          ),
-                        ),
-                        if (isVerified)
-                          const StatusPill(
-                            icon: Icons.verified_rounded,
-                            label: 'Проверен',
-                            tone: StatusTone.success,
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      service,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: const Color(0xFF667085),
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 10,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: const Color(0xFFE6ECF5)),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(
-                            Icons.star_rounded,
-                            size: 18,
-                            color: Color(0xFFF59E0B),
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            rating,
-                            style: const TextStyle(
-                              color: Color(0xFF1F2940),
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                          Text(
-                            ' ($reviews)',
-                            style: const TextStyle(color: Color(0xFF98A2B3)),
-                          ),
-                          const Spacer(),
-                          Text(
-                            price,
-                            style: const TextStyle(
-                              color: Color(0xFF2563EB),
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.chat_bubble_outline_rounded,
-                          size: 16,
-                          color: Color(0xFF94A3B8),
-                        ),
-                        const SizedBox(width: 6),
                         Text(
-                          'Открыть профиль',
-                          style: Theme.of(context).textTheme.bodySmall
+                          name,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.titleMedium
                               ?.copyWith(
-                                color: const Color(0xFF667085),
-                                fontWeight: FontWeight.w700,
+                                fontWeight: FontWeight.w800,
+                                color: const Color(0xFF0F172A),
+                                height: 1.15,
                               ),
                         ),
-                        const Spacer(),
-                        const Icon(
-                          Icons.arrow_forward_rounded,
-                          size: 18,
-                          color: Color(0xFF94A3B8),
+                        const SizedBox(height: 6),
+                        Text(
+                          service,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(
+                                color: const Color(0xFF667085),
+                                fontWeight: FontWeight.w600,
+                              ),
+                        ),
+                        const SizedBox(height: 10),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            if (isVerified)
+                              const StatusPill(
+                                icon: Icons.verified_rounded,
+                                label: 'Проверен',
+                                tone: StatusTone.success,
+                              ),
+                            _InlineBadge(
+                              icon: Icons.star_rounded,
+                              text: '$rating ($reviews)',
+                              color: const Color(0xFFF59E0B),
+                            ),
+                            _InlineBadge(
+                              icon: Icons.payments_outlined,
+                              text: price,
+                              color: const Color(0xFF2563EB),
+                            ),
+                          ],
                         ),
                       ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  const Icon(
+                    Icons.open_in_new_rounded,
+                    size: 16,
+                    color: Color(0xFF94A3B8),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Открыть профиль, отзывы и действия',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: const Color(0xFF667085),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const Spacer(),
+                  const Icon(
+                    Icons.arrow_forward_rounded,
+                    size: 18,
+                    color: Color(0xFF94A3B8),
+                  ),
+                ],
               ),
             ],
           ),
@@ -4581,13 +4918,14 @@ class _CustomerOrderCard extends StatelessWidget {
     final responses = '${order['responses'] ?? 0}';
     final views = '${order['views'] ?? 0}';
     final createdAt = _orderCreatedLabel(order['createdAt'] as String?);
+    final hasPreferredMaster = (order['preferredMasterId'] as num?) != null;
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.all(18),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(22),
           border: Border.all(color: const Color(0xFFE8EEF6)),
           boxShadow: const [
             BoxShadow(
@@ -4648,7 +4986,7 @@ class _CustomerOrderCard extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             Text(
               description,
               maxLines: 2,
@@ -4680,6 +5018,41 @@ class _CustomerOrderCard extends StatelessWidget {
                 ],
               ),
             ),
+            if (hasPreferredMaster) ...[
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEEF6FF),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFD9E9FF)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.person_pin_circle_outlined,
+                      size: 18,
+                      color: Color(0xFF2563EB),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Для этой заявки уже выбран предпочтительный мастер',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: const Color(0xFF1D4ED8),
+                          fontWeight: FontWeight.w700,
+                          height: 1.25,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 14),
             Row(
               children: [
@@ -4724,12 +5097,21 @@ class _MetaInline extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Icon(icon, size: 17, color: color),
         const SizedBox(width: 6),
-        Text(
-          text,
-          style: TextStyle(color: color, fontWeight: FontWeight.w700),
+        Flexible(
+          child: Text(
+            text,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: color,
+              fontWeight: FontWeight.w700,
+              height: 1.2,
+            ),
+          ),
         ),
       ],
     );
@@ -4959,118 +5341,145 @@ class _ResponseCard extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            master,
-                            style: Theme.of(context).textTheme.titleLarge
-                                ?.copyWith(fontWeight: FontWeight.w800),
-                          ),
-                        ),
-                        const Icon(
-                          Icons.verified,
-                          size: 18,
-                          color: Color(0xFF2563EB),
-                        ),
-                      ],
+                    Text(
+                      master,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFF0F172A),
+                        height: 1.1,
+                      ),
                     ),
-                    const SizedBox(height: 6),
-                    Row(
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        const Icon(
-                          Icons.star,
-                          size: 16,
-                          color: Color(0xFFF59E0B),
+                        const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.verified,
+                              size: 16,
+                              color: Color(0xFF2563EB),
+                            ),
+                            SizedBox(width: 4),
+                            Text(
+                              'Проверен',
+                              style: TextStyle(
+                                color: Color(0xFF2563EB),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: 6),
-                        Text(
-                          '${response['rating'] ?? 4.8}',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w800,
-                            color: Color(0xFF1F2940),
-                          ),
-                        ),
-                        Text(
-                          ' (${response['reviews'] ?? 89})',
-                          style: const TextStyle(color: Color(0xFF94A3B8)),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.star,
+                              size: 16,
+                              color: Color(0xFFF59E0B),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              '${response['rating'] ?? 4.8}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFF1F2940),
+                              ),
+                            ),
+                            Text(
+                              ' (${response['reviews'] ?? 89})',
+                              style: const TextStyle(color: Color(0xFF94A3B8)),
+                            ),
+                          ],
                         ),
                       ],
                     ),
                   ],
                 ),
               ),
-              const SizedBox(width: 10),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    '${response['price']}',
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '${response['price']} TJS',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF0F172A),
+                    fontSize: 20,
                   ),
-                  const Text(
-                    'TJS · 2 ч назад',
-                    style: TextStyle(color: Color(0xFF94A3B8)),
-                  ),
-                ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                response['createdAt'] as String? ?? 'Недавно',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Color(0xFF94A3B8),
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.all(18),
+            padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: const Color(0xFFF8FAFC),
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: BorderRadius.circular(18),
             ),
             child: Text(
               response['comment'] as String? ?? '',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              maxLines: 4,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                 color: const Color(0xFF475569),
-                height: 1.4,
+                height: 1.35,
                 fontWeight: FontWeight.w500,
               ),
             ),
           ),
-          const SizedBox(height: 16),
-          Row(
+          const SizedBox(height: 14),
+          _AdaptiveStatGrid(
+            minTileWidth: 136,
             children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: onOpenChat,
-                  icon: const Icon(Icons.chat_bubble_outline),
-                  label: const Text('Чат'),
-                ),
+              OutlinedButton.icon(
+                onPressed: onOpenChat,
+                icon: const Icon(Icons.chat_bubble_outline),
+                label: const Text('Чат'),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: onOpenProfile,
-                  child: const Text('Профиль'),
-                ),
+              OutlinedButton(
+                onPressed: onOpenProfile,
+                child: const Text('Профиль'),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: FilledButton(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: isSelected
-                        ? const Color(0xFF16A34A)
-                        : const Color(0xFF2B5DE0),
-                    foregroundColor: Colors.white,
-                  ),
-                  onPressed: isSelected
-                      ? onOpenChat
-                      : (canSelect ? onSelect : null),
-                  child: Text(isSelected ? 'Открыть чат' : 'Выбрать'),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: isSelected
+                      ? const Color(0xFF16A34A)
+                      : const Color(0xFF2B5DE0),
+                  foregroundColor: Colors.white,
                 ),
+                onPressed: isSelected
+                    ? onOpenChat
+                    : (canSelect ? onSelect : null),
+                child: Text(isSelected ? 'Открыть чат' : 'Выбрать'),
               ),
             ],
           ),
@@ -5180,22 +5589,9 @@ class MasterOverviewPage extends StatelessWidget {
                           ],
                         ),
                       ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 8,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF1E3A8A),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: const Text(
-                          'Режим: Мастер',
-                          style: TextStyle(
-                            color: Color(0xFFBFDBFE),
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
+                      const Icon(
+                        Icons.arrow_forward_rounded,
+                        color: Color(0xFFBFDBFE),
                       ),
                     ],
                   ),
@@ -5237,16 +5633,48 @@ class ChatsPage extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
         SectionTitle(
           title: 'Чаты',
           subtitle: isMaster
-              ? 'Открывайте только активные диалоги по заказам'
-              : 'Продолжайте диалоги по активным заявкам',
+              ? 'Только рабочие диалоги по актуальным заказам'
+              : 'Все договорённости с мастерами собраны в одном месте',
         ),
         const SizedBox(height: 16),
         if (chats.isNotEmpty) ...[
           _ChatsSummaryCard(chats: chats, isMaster: isMaster),
+          const SizedBox(height: 14),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFFE6ECF5)),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.forum_outlined,
+                  size: 18,
+                  color: Color(0xFF2563EB),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    isMaster
+                        ? 'Открывайте диалог, чтобы быстро согласовать цену, срок и детали выезда.'
+                        : 'Открывайте диалог, чтобы уточнить цену, адрес и время работы с мастером.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: const Color(0xFF667085),
+                      fontWeight: FontWeight.w600,
+                      height: 1.35,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
           const SizedBox(height: 14),
         ],
         if (chats.isEmpty)
@@ -5282,34 +5710,27 @@ class _ChatsSummaryCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: const Color(0xFFF8FAFC),
         borderRadius: BorderRadius.circular(24),
         border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
-      child: Row(
+      child: _AdaptiveStatGrid(
+        minTileWidth: 96,
         children: [
-          Expanded(
-            child: MetricCard(
-              label: 'Всего диалогов',
-              value: '${chats.length}',
-              accent: const Color(0xFF0F172A),
-            ),
+          _SummaryStatTile(
+            label: 'Всего',
+            value: '${chats.length}',
+            accent: const Color(0xFF0F172A),
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: MetricCard(
-              label: isMaster ? 'Активные' : 'В работе',
-              value: '$activeCount',
-              accent: const Color(0xFF2563EB),
-            ),
+          _SummaryStatTile(
+            label: isMaster ? 'Активные' : 'В работе',
+            value: '$activeCount',
+            accent: const Color(0xFF2563EB),
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: MetricCard(
-              label: 'Новые',
-              value: '$freshCount',
-              accent: const Color(0xFF059669),
-            ),
+          _SummaryStatTile(
+            label: 'Новые',
+            value: '$freshCount',
+            accent: const Color(0xFF059669),
           ),
         ],
       ),
@@ -5473,20 +5894,20 @@ class _MasterJobCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(22),
           border: Border.all(color: const Color(0xFFE2E8F0)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if ((order['urgent'] as bool?) ?? true)
+            if ((order['urgent'] as bool?) ?? false)
               Container(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
+                  horizontal: 10,
+                  vertical: 6,
                 ),
                 decoration: BoxDecoration(
                   color: const Color(0xFFFEF3C7),
@@ -5497,15 +5918,16 @@ class _MasterJobCard extends StatelessWidget {
                   style: TextStyle(
                     color: Color(0xFFB45309),
                     fontWeight: FontWeight.w800,
+                    fontSize: 12,
                   ),
                 ),
               ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             Text(
               order['title'] as String? ?? 'Заявка',
               style: Theme.of(
                 context,
-              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 8),
             Text(
@@ -6042,95 +6464,209 @@ class _MasterFactTile extends StatelessWidget {
   }
 }
 
-class _MasterReasonRow extends StatelessWidget {
-  const _MasterReasonRow({required this.icon, required this.text});
-
-  final IconData icon;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          width: 36,
-          height: 36,
-          decoration: BoxDecoration(
-            color: const Color(0xFFEFF6FF),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          alignment: Alignment.center,
-          child: Icon(icon, size: 18, color: const Color(0xFF2563EB)),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Text(
-            text,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: const Color(0xFF475569),
-              height: 1.45,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _StatColumn extends StatelessWidget {
-  const _StatColumn({
-    required this.value,
-    required this.label,
-    this.inverted = false,
-  });
-
-  final String value;
-  final String label;
-  final bool inverted;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Text(
-          value,
-          style: TextStyle(
-            color: inverted ? Colors.white : const Color(0xFF1F2940),
-            fontSize: 20,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: TextStyle(
-            color: inverted ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-            fontSize: 14,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _TextTag extends StatelessWidget {
-  const _TextTag({required this.label});
+class _CompactSkillTag extends StatelessWidget {
+  const _CompactSkillTag({required this.label});
 
   final String label;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 16, bottom: 8),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
       child: Text(
         label,
         style: const TextStyle(
           color: Color(0xFF334155),
-          fontSize: 16,
-          fontWeight: FontWeight.w500,
+          fontWeight: FontWeight.w700,
         ),
+      ),
+    );
+  }
+}
+
+class _InlineBadge extends StatelessWidget {
+  const _InlineBadge({
+    required this.icon,
+    required this.text,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String text;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: color),
+          const SizedBox(width: 6),
+          Text(
+            text,
+            style: TextStyle(color: color, fontWeight: FontWeight.w800),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PreferredMasterBanner extends StatelessWidget {
+  const _PreferredMasterBanner({required this.master});
+
+  final Map<String, dynamic> master;
+
+  @override
+  Widget build(BuildContext context) {
+    final name = master['name'] as String? ?? 'Мастер';
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEEF4FF),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFD8E7FF)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              gradient: LinearGradient(
+                colors: [
+                  _masterAccent(name),
+                  _masterAccent(name).withValues(alpha: 0.72),
+                ],
+              ),
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              _initials(name),
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Предпочтительный мастер',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: const Color(0xFF64748B),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    color: const Color(0xFF0F172A),
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  master['service'] as String? ?? 'Специалист',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: const Color(0xFF475569),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MasterReviewCard extends StatelessWidget {
+  const _MasterReviewCard({required this.review});
+
+  final Map<String, dynamic> review;
+
+  @override
+  Widget build(BuildContext context) {
+    final rating = (review['rating'] as num?)?.toInt() ?? 0;
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: const Color(0xFFE8EEF6)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0C0F172A),
+            blurRadius: 18,
+            offset: Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  review['authorName'] as String? ?? 'Клиент',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF0F172A),
+                  ),
+                ),
+              ),
+              Text(
+                review['createdAt'] as String? ?? '',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: const Color(0xFF94A3B8),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 4,
+            children: List.generate(
+              5,
+              (index) => Icon(
+                index < rating ? Icons.star_rounded : Icons.star_border_rounded,
+                size: 18,
+                color: const Color(0xFFF59E0B),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            review['text'] as String? ?? '',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: const Color(0xFF475569),
+              height: 1.45,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -6250,24 +6786,63 @@ class MetricCard extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
             Text(
               value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                 fontWeight: FontWeight.w800,
                 color: valueColor,
+                fontSize: 20,
               ),
             ),
             const SizedBox(height: 4),
             Text(
               label,
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: labelColor),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: labelColor,
+                fontSize: 13,
+                height: 1.2,
+              ),
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _AdaptiveStatGrid extends StatelessWidget {
+  const _AdaptiveStatGrid({required this.children, this.minTileWidth = 100});
+
+  final List<Widget> children;
+  final double minTileWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    const spacing = 10.0;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        var columns = (width / minTileWidth).floor();
+        if (columns < 1) columns = 1;
+        if (columns > children.length) columns = children.length;
+        final itemWidth = columns == 1
+            ? width
+            : (width - spacing * (columns - 1)) / columns;
+        return Wrap(
+          spacing: spacing,
+          runSpacing: spacing,
+          children: [
+            for (final child in children)
+              SizedBox(width: itemWidth, child: child),
+          ],
+        );
+      },
     );
   }
 }
@@ -6350,6 +6925,68 @@ class EmptyState extends StatelessWidget {
   }
 }
 
+class _HomeLoadingView extends StatelessWidget {
+  const _HomeLoadingView();
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Color(0xFFF7F9FC), Color(0xFFEEF3FF)],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ),
+      ),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 74,
+              height: 74,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x120F172A),
+                    blurRadius: 22,
+                    offset: Offset(0, 12),
+                  ),
+                ],
+              ),
+              padding: const EdgeInsets.all(14),
+              child: Image.asset(BrandAssets.appIcon, fit: BoxFit.contain),
+            ),
+            const SizedBox(height: 18),
+            const SizedBox(
+              width: 26,
+              height: 26,
+              child: CircularProgressIndicator(strokeWidth: 2.6),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              'Загружаем данные',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                color: const Color(0xFF1F2940),
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Это займёт всего пару секунд.',
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: const Color(0xFF64748B)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class ErrorState extends StatelessWidget {
   const ErrorState({super.key, required this.message, required this.onRetry});
 
@@ -6424,7 +7061,7 @@ class DashboardHero extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(28),
         gradient: const LinearGradient(
@@ -6436,59 +7073,81 @@ class DashboardHero extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Container(
-                width: 52,
-                height: 52,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.14),
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(8),
-                  child: Image.asset(BrandAssets.appIcon, fit: BoxFit.contain),
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      name,
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w800,
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final compact = constraints.maxWidth < 360;
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 52,
+                        height: 52,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(8),
+                          child: Image.asset(
+                            BrandAssets.appIcon,
+                            fit: BoxFit.contain,
+                          ),
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${_roleLabel(role)} · $city',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Colors.white.withValues(alpha: 0.82),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              name,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.titleLarge
+                                  ?.copyWith(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: compact ? 18 : 20,
+                                    height: 1.1,
+                                  ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '${_roleLabel(role)} · $city',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.bodyMedium
+                                  ?.copyWith(
+                                    color: Colors.white.withValues(alpha: 0.82),
+                                  ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
+                    ],
+                  ),
+                  if (trailing != null) ...[
+                    const SizedBox(height: 12),
+                    Align(alignment: Alignment.centerLeft, child: trailing!),
                   ],
-                ),
-              ),
-              trailing ?? const SizedBox.shrink(),
-            ],
+                ],
+              );
+            },
           ),
           const SizedBox(height: 18),
-          Row(
+          _AdaptiveStatGrid(
+            minTileWidth: 96,
             children: [
-              for (var i = 0; i < stats.length; i++) ...[
-                Expanded(
-                  child: MetricCard(
-                    label: stats[i].label,
-                    value: stats[i].value,
-                    isInverted: true,
-                    accent: stats[i].accent,
-                  ),
+              for (final stat in stats)
+                MetricCard(
+                  label: stat.label,
+                  value: stat.value,
+                  isInverted: true,
+                  accent: stat.accent,
                 ),
-                if (i != stats.length - 1) const SizedBox(width: 10),
-              ],
             ],
           ),
         ],

@@ -14,6 +14,10 @@ type MasterResponse struct {
 	Master Master `json:"master"`
 }
 
+type MasterReviewsResponse struct {
+	Reviews []MasterReview `json:"reviews"`
+}
+
 type MasterFilters struct {
 	Service string
 	Query   string
@@ -33,22 +37,49 @@ func (a *App) mastersHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) masterDetailHandler(w http.ResponseWriter, r *http.Request) {
-	if !method(w, r, http.MethodGet) {
-		return
-	}
-	idText := strings.TrimPrefix(r.URL.Path, "/api/masters/")
-	idText = strings.Trim(idText, "/")
-	id, err := strconv.Atoi(idText)
-	if err != nil || id <= 0 {
-		writeError(w, http.StatusNotFound, "master_not_found", "master not found")
-		return
-	}
-	master, ok := a.masterByID(id)
+	id, action, ok := parseMasterSubroute(r.URL.Path)
 	if !ok {
 		writeError(w, http.StatusNotFound, "master_not_found", "master not found")
 		return
 	}
-	writeJSON(w, MasterResponse{Master: master})
+	switch action {
+	case "":
+		if !method(w, r, http.MethodGet) {
+			return
+		}
+		master, ok := a.masterByID(id)
+		if !ok {
+			writeError(w, http.StatusNotFound, "master_not_found", "master not found")
+			return
+		}
+		writeJSON(w, MasterResponse{Master: master})
+	case "reviews":
+		if !method(w, r, http.MethodGet) {
+			return
+		}
+		writeJSON(w, MasterReviewsResponse{Reviews: a.masterReviews(id)})
+	default:
+		writeError(w, http.StatusNotFound, "route_not_found", "route not found")
+	}
+}
+
+func parseMasterSubroute(path string) (int, string, bool) {
+	rest := strings.TrimPrefix(path, "/api/masters/")
+	parts := strings.Split(strings.Trim(rest, "/"), "/")
+	if len(parts) == 0 || parts[0] == "" {
+		return 0, "", false
+	}
+	id, err := strconv.Atoi(parts[0])
+	if err != nil || id <= 0 {
+		return 0, "", false
+	}
+	if len(parts) == 1 {
+		return id, "", true
+	}
+	if len(parts) == 2 {
+		return id, parts[1], true
+	}
+	return 0, "", false
 }
 
 func masterFiltersFromRequest(r *http.Request) MasterFilters {
@@ -148,4 +179,22 @@ func masterMatchesQuery(master Master, query string) bool {
 	}
 	haystack := strings.ToLower(strings.Join(parts, " "))
 	return strings.Contains(haystack, strings.ToLower(query))
+}
+
+func (a *App) masterReviews(masterID int) []MasterReview {
+	rows, err := a.db.Query(sqlf(`SELECT id,master_id,author_name,rating,text,created_at FROM master_reviews WHERE master_id=? ORDER BY created_at DESC,id DESC`), masterID)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var items []MasterReview
+	for rows.Next() {
+		var item MasterReview
+		var created string
+		if rows.Scan(&item.ID, &item.MasterID, &item.AuthorName, &item.Rating, &item.Text, &created) == nil {
+			item.CreatedAt = relativeTime(created)
+			items = append(items, item)
+		}
+	}
+	return items
 }

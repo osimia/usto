@@ -7,6 +7,6 @@ void main() {
 
     expect(find.text('Опишите задачу'), findsOneWidget);
     expect(find.text('Пропустить'), findsOneWidget);
-    expect(find.text('Далее ->'), findsOneWidget);
+    expect(find.text('Далее'), findsOneWidget);
   });
 }

@@ -177,9 +177,15 @@ func (a *App) createOrder(req Order) (Order, error) {
 	if whenLabel == "" {
 		whenLabel = "В ближайшее время"
 	}
+	preferredMasterID := req.PreferredMasterID
+	if preferredMasterID > 0 {
+		if _, ok := a.masterByID(preferredMasterID); !ok {
+			return Order{}, errors.New("preferred master not found")
+		}
+	}
 
-	id, err := insertID(a.db, `INSERT INTO orders(title,desc,category,district,address,budget,when_label,status,views) VALUES(?,?,?,?,?,?,?,?,0)`,
-		title, desc, category, district, address, budget, whenLabel, "Активная")
+	id, err := insertID(a.db, `INSERT INTO orders(title,"desc",category,district,address,budget,when_label,status,views,preferred_master_id) VALUES(?,?,?,?,?,?,?,?,0,?)`,
+		title, desc, category, district, address, budget, whenLabel, "Активная", nullableInt(preferredMasterID))
 	if err != nil {
 		return Order{}, err
 	}
@@ -237,7 +243,7 @@ func (a *App) filteredOrders(filters OrderFilters) []Order {
 // (SQLite has no good case-insensitive multi-column search here), but only
 // over a SQL-bounded result set, not the entire table.
 func (a *App) queryOrders(filters OrderFilters) []Order {
-	query := `SELECT o.id,o.selected_master_id,o.title,o.desc,o.category,o.district,o.address,o.budget,o.when_label,o.status,o.views,o.created_at,COUNT(r.id)
+	query := `SELECT o.id,o.selected_master_id,o.preferred_master_id,o.title,o."desc",o.category,o.district,o.address,o.budget,o.when_label,o.status,o.views,o.created_at,COUNT(r.id)
 		FROM orders o LEFT JOIN responses r ON r.order_id=o.id`
 	var conditions []string
 	var args []any
@@ -277,10 +283,14 @@ func (a *App) queryOrders(filters OrderFilters) []Order {
 	for rows.Next() {
 		var o Order
 		var selectedMasterID sql.NullInt64
+		var preferredMasterID sql.NullInt64
 		var created string
-		if rows.Scan(&o.ID, &selectedMasterID, &o.Title, &o.Desc, &o.Category, &o.District, &o.Address, &o.Budget, &o.When, &o.Status, &o.Views, &created, &o.Responses) == nil {
+		if rows.Scan(&o.ID, &selectedMasterID, &preferredMasterID, &o.Title, &o.Desc, &o.Category, &o.District, &o.Address, &o.Budget, &o.When, &o.Status, &o.Views, &created, &o.Responses) == nil {
 			if selectedMasterID.Valid {
 				o.SelectedMasterID = int(selectedMasterID.Int64)
+			}
+			if preferredMasterID.Valid {
+				o.PreferredMasterID = int(preferredMasterID.Int64)
 			}
 			o.CreatedAt = relativeTime(created)
 			items = append(items, o)
@@ -313,4 +323,11 @@ func orderMatchesQuery(order Order, query string) bool {
 		order.Status,
 	}, " "))
 	return strings.Contains(haystack, strings.ToLower(query))
+}
+
+func nullableInt(v int) any {
+	if v <= 0 {
+		return nil
+	}
+	return v
 }

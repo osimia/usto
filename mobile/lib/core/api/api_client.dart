@@ -18,6 +18,7 @@ class ApiClient {
   final String baseUrl;
   String? accessToken;
   String? refreshToken;
+  static const _timeout = Duration(seconds: 12);
 
   Future<Map<String, dynamic>> getJson(String path) {
     return _request('GET', path);
@@ -53,9 +54,13 @@ class ApiClient {
       }
       final requestBody = body == null ? null : jsonEncode(body);
       final response = await switch (method) {
-        'GET' => http.get(uri, headers: headers),
-        'POST' => http.post(uri, headers: headers, body: requestBody),
-        'PATCH' => http.patch(uri, headers: headers, body: requestBody),
+        'GET' => http.get(uri, headers: headers).timeout(_timeout),
+        'POST' =>
+          http.post(uri, headers: headers, body: requestBody).timeout(_timeout),
+        'PATCH' =>
+          http
+              .patch(uri, headers: headers, body: requestBody)
+              .timeout(_timeout),
         _ => throw ApiException('Unsupported method: $method'),
       };
       final text = response.body;
@@ -76,6 +81,13 @@ class ApiClient {
       return data;
     } on http.ClientException {
       throw ApiException('Не удалось подключиться к API: $baseUrl');
+    } on Exception catch (error) {
+      if (error.toString().contains('TimeoutException')) {
+        throw ApiException(
+          'Сервер отвечает слишком долго. Попробуйте ещё раз.',
+        );
+      }
+      rethrow;
     }
   }
 
