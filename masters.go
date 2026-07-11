@@ -1,6 +1,8 @@
 package main
 
 import (
+	"database/sql"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -99,20 +101,32 @@ func (a *App) filteredMasters(filters MasterFilters) []Master {
 	return a.queryMasters(filters)
 }
 
+// masterSelectColumns is shared by queryMasters/masterByID: verified is
+// COALESCE(p.is_verified, m.verified) so a master linked to a real profile
+// (m.profile_id set) shows the live verification status that
+// verification.go actually manages, while seed/demo masters with no linked
+// profile keep falling back to their static seed value. This is a read-time
+// join rather than a write-time sync so there's exactly one place that can
+// drift, not one per call site that touches is_verified.
+const masterSelectColumns = `m.id,m.name,m.service,m.rating,m.reviews,m.price,
+	COALESCE(p.is_verified, m.verified) AS verified,m.bio,m.skills,m.portfolio`
+
+const masterSelectFrom = `FROM masters m LEFT JOIN profiles p ON p.id = m.profile_id`
+
 // queryMasters pushes the service filter into SQL and caps with SQL LIMIT;
 // the free-text query filter still runs in Go, over a SQL-bounded window.
 func (a *App) queryMasters(filters MasterFilters) []Master {
-	query := `SELECT id,name,service,rating,reviews,price,verified,bio,skills,portfolio FROM masters`
+	query := `SELECT ` + masterSelectColumns + ` ` + masterSelectFrom
 	var conditions []string
 	var args []any
 	if filters.Service != "" {
-		conditions = append(conditions, equalityCI("service"))
+		conditions = append(conditions, equalityCI("m.service"))
 		args = append(args, filters.Service)
 	}
 	if len(conditions) > 0 {
 		query += " WHERE " + strings.Join(conditions, " AND ")
 	}
-	query += " ORDER BY rating DESC"
+	query += " ORDER BY m.rating DESC"
 
 	switch {
 	case filters.Query != "":
@@ -156,7 +170,7 @@ func (a *App) queryMasters(filters MasterFilters) []Master {
 }
 
 func (a *App) masterByID(id int) (Master, bool) {
-	row := a.db.QueryRow(sqlf(`SELECT id,name,service,rating,reviews,price,verified,bio,skills,portfolio FROM masters WHERE id=?`), id)
+	row := a.db.QueryRow(sqlf(`SELECT `+masterSelectColumns+` `+masterSelectFrom+` WHERE m.id=?`), id)
 	var m Master
 	var verified int
 	var skills, portfolio string
@@ -192,6 +206,17 @@ func (a *App) masterIDForProfile(profileID int) (int, bool) {
 	return id, true
 }
 
+// profileIDForMaster is the inverse of masterIDForProfile: given a
+// masters-directory row, find the profile it's linked to (if any — seed/demo
+// masters predating this link may have none).
+func (a *App) profileIDForMaster(masterID int) (int, bool) {
+	var profileID sql.NullInt64
+	if err := a.db.QueryRow(sqlf(`SELECT profile_id FROM masters WHERE id=?`), masterID).Scan(&profileID); err != nil || !profileID.Valid {
+		return 0, false
+	}
+	return int(profileID.Int64), true
+}
+
 // ensureMasterDirectoryEntry creates a blank, editable-later directory row
 // for a newly-registered master profile (or returns the existing one), so
 // every real master has somewhere for responses to attribute to and can
@@ -202,6 +227,88 @@ func (a *App) ensureMasterDirectoryEntry(profileID int) (int, error) {
 	}
 	return insertID(a.db, `INSERT INTO masters(name,service,rating,reviews,price,verified,bio,skills,portfolio,profile_id) VALUES(?,?,?,?,?,?,?,?,?,?)`,
 		"", "", 0, 0, "", 0, "", "", "", profileID)
+}
+
+type UpdateMasterListingRequest struct {
+	Name      string   `json:"name"`
+	Service   string   `json:"service"`
+	Bio       string   `json:"bio"`
+	Skills    []string `json:"skills"`
+	Portfolio []string `json:"portfolio"`
+}
+
+// myMasterListingProfile resolves the caller's own profile from their JWT —
+// editing a directory listing is a master-only concept, same pattern as
+// walletProfile/verificationMasterProfile.
+func (a *App) myMasterListingProfile(w http.ResponseWriter, r *http.Request) (Profile, bool) {
+	_, profile, ok := a.currentUserProfile(w, r)
+	if !ok {
+		return Profile{}, false
+	}
+	if profile.Role != "master" {
+		writeError(w, http.StatusForbidden, "forbidden", "only masters have a directory listing")
+		return Profile{}, false
+	}
+	return profile, true
+}
+
+func (a *App) myMasterListingHandler(w http.ResponseWriter, r *http.Request) {
+	profile, ok := a.myMasterListingProfile(w, r)
+	if !ok {
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		a.writeMyMasterListing(w, profile)
+	case http.MethodPatch:
+		var req UpdateMasterListingRequest
+		if err := decode(r, &req); err != nil {
+			badRequest(w, err)
+			return
+		}
+		if err := a.updateMyMasterListing(profile.ID, req); err != nil {
+			badRequest(w, err)
+			return
+		}
+		a.writeMyMasterListing(w, profile)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+	}
+}
+
+func (a *App) writeMyMasterListing(w http.ResponseWriter, profile Profile) {
+	// ensureMasterDirectoryEntry also lazily backfills a listing for masters
+	// registered before masters.profile_id existed, so GET/PATCH /masters/me
+	// is robust for pre-existing accounts too, not just newly-registered ones.
+	masterID, err := a.ensureMasterDirectoryEntry(profile.ID)
+	if err != nil {
+		serverError(w, err)
+		return
+	}
+	master, ok := a.masterByID(masterID)
+	if !ok {
+		serverError(w, errors.New("master listing not found after ensure"))
+		return
+	}
+	writeJSON(w, MasterResponse{Master: master})
+}
+
+func (a *App) updateMyMasterListing(profileID int, req UpdateMasterListingRequest) error {
+	name := strings.TrimSpace(req.Name)
+	service := strings.TrimSpace(req.Service)
+	if name == "" {
+		return errors.New("name is required")
+	}
+	if service == "" {
+		return errors.New("service is required")
+	}
+	masterID, err := a.ensureMasterDirectoryEntry(profileID)
+	if err != nil {
+		return err
+	}
+	_, err = a.db.Exec(sqlf(`UPDATE masters SET name=?, service=?, bio=?, skills=?, portfolio=? WHERE id=?`),
+		name, service, strings.TrimSpace(req.Bio), joinList(req.Skills), joinList(req.Portfolio), masterID)
+	return err
 }
 
 func (a *App) masterReviews(masterID int) []MasterReview {

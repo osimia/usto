@@ -47,10 +47,10 @@ func (a *App) categoryDetailHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(parts) == 2 && parts[1] == "services" {
-		writeJSON(w, map[string][]string{"services": servicesForCategory(category.Name)})
+		writeJSON(w, map[string][]string{"services": a.servicesForCategory(category.ID)})
 		return
 	}
-	writeJSON(w, CategoryResponse{Category: category, Services: servicesForCategory(category.Name)})
+	writeJSON(w, CategoryResponse{Category: category, Services: a.servicesForCategory(category.ID)})
 }
 
 func (a *App) categoryByID(id int) (Category, bool) {
@@ -62,19 +62,18 @@ func (a *App) categoryByID(id int) (Category, bool) {
 	return Category{}, false
 }
 
-func servicesForCategory(name string) []string {
-	switch name {
-	case "Сантехника":
-		return []string{"Краны", "Трубы", "Бойлеры", "Засоры"}
-	case "Электрика":
-		return []string{"Розетки", "Проводка", "Освещение", "Щитки"}
-	case "Ремонт":
-		return []string{"Плитка", "Покраска", "Штукатурка", "Косметический ремонт"}
-	case "Мебель":
-		return []string{"Сборка", "Ремонт", "Установка", "Разборка"}
-	case "Уборка":
-		return []string{"Квартира", "Офис", "После ремонта", "Генеральная"}
-	default:
-		return []string{name}
+func (a *App) servicesForCategory(categoryID int) []string {
+	rows, err := a.db.Query(sqlf(`SELECT name FROM services WHERE category_id=? ORDER BY id`), categoryID)
+	if err != nil {
+		return nil
 	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var name string
+		if rows.Scan(&name) == nil {
+			items = append(items, name)
+		}
+	}
+	return items
 }

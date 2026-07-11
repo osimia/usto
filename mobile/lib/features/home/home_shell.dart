@@ -1,4 +1,8 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../app/brand_assets.dart';
 import '../../core/api/api_client.dart';
@@ -38,9 +42,11 @@ class _HomeShellState extends State<HomeShell> {
     ]);
     final bootstrap = results[2];
     final master = bootstrap['master'] as Map<String, dynamic>? ?? const {};
+    final orders = asMapList(bootstrap['orders']);
+    normalizeOrderPhotoUrls(orders, widget.apiClient);
     return HomeData(
       me: results[0],
-      orders: asMapList(bootstrap['orders']),
+      orders: orders,
       masters: asMapList(bootstrap['masters']),
       wallet: {
         'balance': master['walletBalance'] ?? 0,
@@ -136,6 +142,23 @@ class _HomeShellState extends State<HomeShell> {
     await _refresh();
   }
 
+  Future<void> _editMasterListing() async {
+    final result = await widget.apiClient.getJson('/masters/me');
+    final listing = Map<String, dynamic>.from(
+      result['master'] as Map? ?? const <String, dynamic>{},
+    );
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => EditMasterListingScreen(
+          apiClient: widget.apiClient,
+          listing: listing,
+        ),
+      ),
+    );
+    await _refresh();
+  }
+
   Future<void> _openVerification() async {
     await Navigator.of(context).push(
       MaterialPageRoute(
@@ -193,6 +216,7 @@ class _HomeShellState extends State<HomeShell> {
                     onWallet: _openWallet,
                     isMaster: true,
                     onLogout: widget.onLogout,
+                    onEditListing: _editMasterListing,
                   ),
                 ]
               : [
@@ -217,6 +241,7 @@ class _HomeShellState extends State<HomeShell> {
                     onEdit: () => _editProfile(data),
                     onVerification: _openVerification,
                     onWallet: _openWallet,
+                    onLogout: widget.onLogout,
                   ),
                 ];
           return SafeArea(
@@ -681,7 +706,7 @@ class OrdersPage extends StatelessWidget {
   }
 }
 
-class MastersPage extends StatelessWidget {
+class MastersPage extends StatefulWidget {
   const MastersPage({
     super.key,
     required this.masters,
@@ -692,17 +717,75 @@ class MastersPage extends StatelessWidget {
   final ValueChanged<Map<String, dynamic>> onOpenMaster;
 
   @override
+  State<MastersPage> createState() => _MastersPageState();
+}
+
+class _MastersPageState extends State<MastersPage> {
+  final _search = TextEditingController();
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  // Masters are already fully preloaded (via bootstrap), so filtering
+  // locally avoids an extra network round trip; mirrors the backend's own
+  // masterMatchesQuery field set (name/service/price/bio/skills).
+  List<Map<String, dynamic>> get _filteredMasters {
+    final query = _search.text.trim().toLowerCase();
+    if (query.isEmpty) return widget.masters;
+    return widget.masters.where((master) {
+      final haystack = [
+        master['name'],
+        master['service'],
+        master['price'],
+        master['bio'],
+        ...List<String>.from(master['skills'] as List? ?? const []),
+      ].join(' ').toLowerCase();
+      return haystack.contains(query);
+    }).toList();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final masters = widget.masters;
+    final filtered = _filteredMasters;
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        const _SectionHeader(title: 'Мастера', actionLabel: 'Все'),
+        _SectionHeader(
+          title: 'Мастера',
+          actionLabel: 'Все',
+          onTap: _search.text.isEmpty ? null : () => setState(_search.clear),
+        ),
         const SizedBox(height: 10),
         Text(
           'Выбирайте по специализации, рейтингу и статусу проверки.',
           style: Theme.of(
             context,
           ).textTheme.bodyMedium?.copyWith(color: const Color(0xFF667085)),
+        ),
+        const SizedBox(height: 14),
+        TextField(
+          controller: _search,
+          onChanged: (_) => setState(() {}),
+          decoration: InputDecoration(
+            hintText: 'Поиск по имени, услуге, навыкам',
+            prefixIcon: const Icon(Icons.search),
+            suffixIcon: _search.text.isEmpty
+                ? null
+                : IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => setState(_search.clear),
+                  ),
+            filled: true,
+            fillColor: const Color(0xFFF8FAFC),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide.none,
+            ),
+          ),
         ),
         const SizedBox(height: 16),
         Container(
@@ -737,15 +820,19 @@ class MastersPage extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 14),
-        if (masters.isEmpty)
-          const EmptyState(
+        if (filtered.isEmpty)
+          EmptyState(
             icon: Icons.groups_outlined,
-            text: 'Мастеров пока нет',
-            subtitle:
-                'Когда база специалистов загрузится, вы сможете выбрать подходящего исполнителя.',
+            text: masters.isEmpty ? 'Мастеров пока нет' : 'Никого не нашлось',
+            subtitle: masters.isEmpty
+                ? 'Когда база специалистов загрузится, вы сможете выбрать подходящего исполнителя.'
+                : 'Попробуйте другой запрос или очистите поиск.',
           ),
-        for (final master in masters) ...[
-          _MasterListCard(master: master, onTap: () => onOpenMaster(master)),
+        for (final master in filtered) ...[
+          _MasterListCard(
+            master: master,
+            onTap: () => widget.onOpenMaster(master),
+          ),
           const SizedBox(height: 12),
         ],
       ],
@@ -762,6 +849,7 @@ class ProfilePage extends StatelessWidget {
     required this.onWallet,
     this.isMaster = false,
     this.onLogout,
+    this.onEditListing,
   });
 
   final HomeData data;
@@ -770,6 +858,7 @@ class ProfilePage extends StatelessWidget {
   final VoidCallback onWallet;
   final bool isMaster;
   final VoidCallback? onLogout;
+  final VoidCallback? onEditListing;
 
   @override
   Widget build(BuildContext context) {
@@ -922,9 +1011,20 @@ class ProfilePage extends StatelessWidget {
                       'Имя, город, рабочая информация и видимость профиля',
                   onTap: onEdit,
                 ),
+                if (onEditListing != null) ...[
+                  const SizedBox(height: 10),
+                  _ProfileSummaryRow(
+                    icon: Icons.storefront_outlined,
+                    title: 'Профиль в каталоге',
+                    subtitle:
+                        'Услуга, описание, навыки и портфолио для клиентов',
+                    onTap: onEditListing,
+                  ),
+                ],
               ],
             ),
           ),
+          _buildLogoutButton(context),
         ],
       );
     }
@@ -1072,8 +1172,52 @@ class ProfilePage extends StatelessWidget {
             ],
           ),
         ),
+        _buildLogoutButton(context),
       ],
     );
+  }
+
+  Widget _buildLogoutButton(BuildContext context) {
+    if (onLogout == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 14),
+      child: SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: const Color(0xFFDC2626),
+            side: const BorderSide(color: Color(0xFFFCA5A5)),
+            minimumSize: const Size.fromHeight(48),
+          ),
+          onPressed: () => _confirmLogout(context),
+          icon: const Icon(Icons.logout),
+          label: const Text('Выйти из аккаунта'),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _confirmLogout(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Выйти из аккаунта?'),
+        content: const Text('Понадобится снова войти по номеру телефона.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Выйти'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      onLogout?.call();
+    }
   }
 }
 
@@ -1189,8 +1333,12 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
   String _when = 'Сегодня';
   int _step = 0;
   bool _saving = false;
+  bool _pickingPhoto = false;
   String? _error;
+  XFile? _pickedPhoto;
+  Uint8List? _pickedPhotoBytes;
   final List<String> _selectedTemplates = [];
+  final ImagePicker _imagePicker = ImagePicker();
 
   static const _whenOptions = [
     'Сегодня',
@@ -1250,12 +1398,62 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       final order = Map<String, dynamic>.from(
         created['order'] as Map? ?? const {},
       );
-      if (mounted) Navigator.of(context).pop(order);
+      final uploadedOrder = await _uploadPickedPhoto(order);
+      if (mounted) Navigator.of(context).pop(uploadedOrder);
     } on ApiException catch (error) {
       setState(() => _error = error.message);
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  Future<Map<String, dynamic>> _uploadPickedPhoto(
+    Map<String, dynamic> order,
+  ) async {
+    final photo = _pickedPhoto;
+    final orderId = (order['id'] as num?)?.toInt();
+    if (photo == null || orderId == null) {
+      return order;
+    }
+    final uploaded = await widget.apiClient.postMultipart(
+      '/orders/$orderId/photos',
+      fieldName: 'file',
+      filePath: photo.path,
+    );
+    return Map<String, dynamic>.from(uploaded['order'] as Map? ?? order);
+  }
+
+  Future<void> _pickPhoto() async {
+    setState(() {
+      _pickingPhoto = true;
+      _error = null;
+    });
+    try {
+      final photo = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 86,
+        maxWidth: 1800,
+      );
+      if (photo == null) return;
+      final bytes = await photo.readAsBytes();
+      if (!mounted) return;
+      setState(() {
+        _pickedPhoto = photo;
+        _pickedPhotoBytes = bytes;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _error = 'Не удалось выбрать фото. Попробуйте ещё раз.');
+    } finally {
+      if (mounted) setState(() => _pickingPhoto = false);
+    }
+  }
+
+  void _removePickedPhoto() {
+    setState(() {
+      _pickedPhoto = null;
+      _pickedPhotoBytes = null;
+    });
   }
 
   bool get _canContinue {
@@ -1468,14 +1666,16 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                   backgroundColor: const Color(0xFF2B5DE0),
                   foregroundColor: Colors.white,
                 ),
-                onPressed: _saving
+                onPressed: (_saving || _pickingPhoto)
                     ? null
                     : (_step == 4
                           ? _submit
                           : (_canContinue ? _continueFlow : null)),
                 child: Text(
                   _saving
-                      ? 'Публикация...'
+                      ? (_pickedPhoto == null
+                            ? 'Публикация...'
+                            : 'Публикация и загрузка фото...')
                       : (_step == 4 ? 'Опубликовать' : 'Далее'),
                 ),
               ),
@@ -1515,6 +1715,8 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
           ),
         ],
       ),
+      const SizedBox(height: 18),
+      _buildPhotoPicker(context),
       const SizedBox(height: 18),
       TextField(
         controller: _desc,
@@ -1724,9 +1926,100 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       InfoCard(
         icon: Icons.event_outlined,
         title: _when,
-        subtitle: _budget.text,
+        subtitle: _pickedPhoto == null
+            ? _budget.text
+            : '${_budget.text} · 1 фото прикреплено',
       ),
     ];
+  }
+
+  Widget _buildPhotoPicker(BuildContext context) {
+    final bytes = _pickedPhotoBytes;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: bytes == null
+          ? Row(
+              children: [
+                Container(
+                  width: 46,
+                  height: 46,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEFF6FF),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Icon(
+                    Icons.add_photo_alternate_outlined,
+                    color: Color(0xFF2563EB),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Добавьте фото, если по нему мастеру проще оценить работу.',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: const Color(0xFF475569),
+                      height: 1.35,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  onPressed: _pickingPhoto ? null : _pickPhoto,
+                  icon: _pickingPhoto
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.photo_library_outlined),
+                ),
+              ],
+            )
+          : Row(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: Image.memory(
+                    bytes,
+                    width: 78,
+                    height: 78,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Фото прикреплено',
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF0F172A),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Загрузим его вместе с заявкой.',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: const Color(0xFF64748B),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  onPressed: _removePickedPhoto,
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ],
+            ),
+    );
   }
 }
 
@@ -1749,6 +2042,7 @@ class OrderDetailScreen extends StatefulWidget {
 class _OrderDetailScreenState extends State<OrderDetailScreen> {
   late Future<Map<String, dynamic>> _future;
   bool _selectingResponse = false;
+  bool _updatingStatus = false;
 
   @override
   void initState() {
@@ -1756,8 +2050,15 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     _future = _load();
   }
 
-  Future<Map<String, dynamic>> _load() =>
-      widget.apiClient.getJson('/orders/${widget.orderId}');
+  Future<Map<String, dynamic>> _load() async {
+    final data = await widget.apiClient.getJson('/orders/${widget.orderId}');
+    final order = Map<String, dynamic>.from(
+      data['order'] as Map? ?? const <String, dynamic>{},
+    );
+    normalizeOrderPhotoUrls([order], widget.apiClient);
+    data['order'] = order;
+    return data;
+  }
 
   Future<void> _refresh() async {
     setState(() {
@@ -1886,6 +2187,88 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     }
   }
 
+  Future<void> _updateStatus(String action) async {
+    setState(() => _updatingStatus = true);
+    try {
+      await widget.apiClient.patchJson(
+        '/orders/${widget.orderId}/status',
+        body: {'status': action},
+      );
+      await _refresh();
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    } finally {
+      if (mounted) setState(() => _updatingStatus = false);
+    }
+  }
+
+  Future<void> _confirmCancelOrder() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Отменить заявку?'),
+        content: const Text('Это действие нельзя будет отменить.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Назад'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Отменить заявку'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await _updateStatus('cancelled');
+    }
+  }
+
+  Widget _buildStatusActions(String? status) {
+    if (status == 'Завершена' || status == 'Отменена') {
+      return const SizedBox.shrink();
+    }
+    final canComplete = status == 'Мастер выбран';
+    return Padding(
+      padding: const EdgeInsets.only(top: 14),
+      child: Row(
+        children: [
+          if (canComplete) ...[
+            Expanded(
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF059669),
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: _updatingStatus
+                    ? null
+                    : () => _updateStatus('completed'),
+                icon: const Icon(Icons.task_alt_outlined),
+                label: const Text('Завершить'),
+              ),
+            ),
+            const SizedBox(width: 10),
+          ],
+          Expanded(
+            child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFFDC2626),
+                side: const BorderSide(color: Color(0xFFFCA5A5)),
+              ),
+              onPressed: _updatingStatus ? null : _confirmCancelOrder,
+              icon: const Icon(Icons.cancel_outlined),
+              label: const Text('Отменить'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1904,6 +2287,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
           }
           final order = snapshot.data!['order'] as Map<String, dynamic>;
           final responses = asMapList(snapshot.data!['responses']);
+          final photos = orderPhotos(order);
           final selectedMasterId = (order['selectedMasterId'] as num?)?.toInt();
           final selectedResponse = selectedMasterId == null
               ? null
@@ -1915,242 +2299,287 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                 );
           final hasPreferredMaster =
               (order['preferredMasterId'] as num?) != null;
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
-            children: [
-              Container(
-                padding: const EdgeInsets.all(18),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: const Color(0xFFE8EEF6)),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0x0C0F172A),
-                      blurRadius: 18,
-                      offset: Offset(0, 10),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      order['title'] as String? ?? 'Заявка',
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        color: const Color(0xFF0F172A),
+          return RefreshIndicator(
+            onRefresh: _refresh,
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: const Color(0xFFE8EEF6)),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x0C0F172A),
+                        blurRadius: 18,
+                        offset: Offset(0, 10),
                       ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      '${order['category']} · р-н ${order['district']}',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: const Color(0xFF64748B),
-                        fontWeight: FontWeight.w600,
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        order['title'] as String? ?? 'Заявка',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF0F172A),
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 14),
-                    Wrap(
-                      spacing: 12,
-                      runSpacing: 10,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        if (widget.isMaster) ...[
-                          _MetaInline(
-                            icon: Icons.payments_outlined,
-                            text: order['budget'] as String? ?? 'Без бюджета',
-                            color: const Color(0xFF059669),
-                          ),
-                          _MetaInline(
-                            icon: Icons.schedule_outlined,
-                            text: order['when'] as String? ?? 'Срок не указан',
-                          ),
-                        ] else ...[
-                          _MetaInline(
-                            icon: Icons.visibility_outlined,
-                            text: '${order['views'] ?? 12} просмотров',
-                          ),
-                          _MetaInline(
-                            icon: Icons.chat_bubble_outline,
-                            text: '${responses.length} отклика',
-                            color: const Color(0xFF2563EB),
+                      const SizedBox(height: 6),
+                      Text(
+                        '${order['category']} · р-н ${order['district']}',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: const Color(0xFF64748B),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      Wrap(
+                        spacing: 12,
+                        runSpacing: 10,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          if (widget.isMaster) ...[
+                            _MetaInline(
+                              icon: Icons.payments_outlined,
+                              text: order['budget'] as String? ?? 'Без бюджета',
+                              color: const Color(0xFF059669),
+                            ),
+                            _MetaInline(
+                              icon: Icons.schedule_outlined,
+                              text:
+                                  order['when'] as String? ?? 'Срок не указан',
+                            ),
+                          ] else ...[
+                            _MetaInline(
+                              icon: Icons.visibility_outlined,
+                              text: '${order['views'] ?? 0} просмотров',
+                            ),
+                            _MetaInline(
+                              icon: Icons.chat_bubble_outline,
+                              text: '${responses.length} отклика',
+                              color: const Color(0xFF2563EB),
+                            ),
+                          ],
+                          StatusPill(
+                            icon: _orderStatusIcon(order['status'] as String?),
+                            label: _orderStatusLabel(
+                              order['status'] as String?,
+                            ),
+                            tone: _orderStatusTone(order['status'] as String?),
                           ),
                         ],
-                        StatusPill(
-                          icon: _orderStatusIcon(order['status'] as String?),
-                          label: _orderStatusLabel(order['status'] as String?),
-                          tone: _orderStatusTone(order['status'] as String?),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 14),
-              if (!widget.isMaster &&
-                  hasPreferredMaster &&
-                  selectedResponse == null) ...[
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 12,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEEF6FF),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0xFFD9E9FF)),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.person_pin_circle_outlined,
-                        size: 18,
-                        color: Color(0xFF2563EB),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Для этой заявки уже указан предпочтительный мастер. Можно дождаться его отклика или выбрать другого исполнителя ниже.',
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(
-                                color: const Color(0xFF1D4ED8),
-                                fontWeight: FontWeight.w700,
-                                height: 1.35,
-                              ),
-                        ),
                       ),
                     ],
                   ),
                 ),
+                if (!widget.isMaster)
+                  _buildStatusActions(order['status'] as String?),
                 const SizedBox(height: 14),
-              ],
-              if (!widget.isMaster && selectedResponse != null) ...[
-                InfoCard(
-                  icon: Icons.verified_user_outlined,
-                  title:
-                      '${selectedResponse['master'] ?? 'Исполнитель'} уже выбран',
-                  subtitle:
-                      'Можно перейти в чат и согласовать детали перед выполнением работы.',
-                  trailing: const StatusPill(
-                    icon: Icons.check_circle_outline,
-                    label: 'Выбран',
-                    tone: StatusTone.success,
-                  ),
-                ),
-                const SizedBox(height: 14),
-              ],
-              if (widget.isMaster && selectedMasterId != null) ...[
-                InfoCard(
-                  icon: Icons.info_outline,
-                  title: 'Заказ уже в работе',
-                  subtitle:
-                      'Заказчик уже выбрал исполнителя по этой заявке. Можно посмотреть детали, но новый отклик больше не нужен.',
-                  trailing: const StatusPill(
-                    icon: Icons.lock_outline,
-                    label: 'Закрыт',
-                    tone: StatusTone.warning,
-                  ),
-                ),
-                const SizedBox(height: 14),
-              ],
-              Container(
-                padding: const EdgeInsets.all(22),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(30),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0x120F172A),
-                      blurRadius: 20,
-                      offset: Offset(0, 10),
+                if (!widget.isMaster &&
+                    hasPreferredMaster &&
+                    selectedResponse == null) ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
                     ),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      order['desc'] as String? ?? '',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        color: const Color(0xFF475569),
-                        height: 1.45,
-                        fontWeight: FontWeight.w500,
-                      ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEEF6FF),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFFD9E9FF)),
                     ),
-                    const SizedBox(height: 20),
-                    _OrderFactRow(
-                      label: 'Район',
-                      value: '${order['district']}, Душанбе',
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.person_pin_circle_outlined,
+                          size: 18,
+                          color: Color(0xFF2563EB),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Для этой заявки уже указан предпочтительный мастер. Можно дождаться его отклика или выбрать другого исполнителя ниже.',
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: const Color(0xFF1D4ED8),
+                                  fontWeight: FontWeight.w700,
+                                  height: 1.35,
+                                ),
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 12),
-                    _OrderFactRow(
-                      label: 'Адрес',
-                      value: order['address'] as String? ?? 'Не указан',
-                    ),
-                    const SizedBox(height: 12),
-                    _OrderFactRow(
-                      label: 'Бюджет',
-                      value: order['budget'] as String? ?? '',
-                    ),
-                    const SizedBox(height: 12),
-                    _OrderFactRow(
-                      label: 'Когда',
-                      value: order['when'] as String? ?? '',
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 24),
-              if (widget.isMaster) ...[
-                const SectionTitle(
-                  title: 'Перед откликом',
-                  subtitle:
-                      'Коротко опишите, когда готовы взять заказ и какую цену предлагаете.',
-                ),
-                const SizedBox(height: 12),
-                InfoCard(
-                  icon: Icons.tips_and_updates_outlined,
-                  title: responses.isEmpty
-                      ? 'Вы можете стать первым'
-                      : 'Откликов уже: ${responses.length}',
-                  subtitle: selectedMasterId == null
-                      ? 'Чем понятнее комментарий и срок, тем выше шанс, что заказчик откроет именно ваш чат.'
-                      : 'Заказ уже закрыт для новых предложений.',
-                ),
-              ] else ...[
-                const SectionTitle(
-                  title: 'Отклики мастеров',
-                  subtitle:
-                      'Сравните цену, опыт и выберите подходящего исполнителя',
-                ),
-                const SizedBox(height: 12),
-                if (responses.isEmpty)
-                  const EmptyState(
-                    icon: Icons.mark_chat_unread_outlined,
-                    text: 'Откликов пока нет',
-                    subtitle:
-                        'Когда мастера увидят заявку, их предложения появятся в этом списке.',
-                  ),
-                for (final response in responses) ...[
-                  _ResponseCard(
-                    response: response,
-                    onOpenChat: () => _openChatForResponse(response),
-                    onOpenProfile: () =>
-                        _openMasterProfile(response['masterId'] as int),
-                    onSelect: _selectingResponse
-                        ? null
-                        : () => _selectMaster(response),
-                    isSelected:
-                        (response['masterId'] as num?)?.toInt() ==
-                        selectedMasterId,
-                    selectionLocked: selectedMasterId != null,
                   ),
                   const SizedBox(height: 14),
                 ],
+                if (!widget.isMaster && selectedResponse != null) ...[
+                  InfoCard(
+                    icon: Icons.verified_user_outlined,
+                    title:
+                        '${selectedResponse['master'] ?? 'Исполнитель'} уже выбран',
+                    subtitle:
+                        'Можно перейти в чат и согласовать детали перед выполнением работы.',
+                    trailing: const StatusPill(
+                      icon: Icons.check_circle_outline,
+                      label: 'Выбран',
+                      tone: StatusTone.success,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                ],
+                if (widget.isMaster && selectedMasterId != null) ...[
+                  InfoCard(
+                    icon: Icons.info_outline,
+                    title: 'Заказ уже в работе',
+                    subtitle:
+                        'Заказчик уже выбрал исполнителя по этой заявке. Можно посмотреть детали, но новый отклик больше не нужен.',
+                    trailing: const StatusPill(
+                      icon: Icons.lock_outline,
+                      label: 'Закрыт',
+                      tone: StatusTone.warning,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                ],
+                if (photos.isNotEmpty) ...[
+                  SectionTitle(
+                    title: 'Фото заявки',
+                    subtitle: photos.length == 1
+                        ? 'Фото поможет мастеру точнее оценить работу.'
+                        : 'Все прикреплённые фото по этой заявке.',
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    height: photos.length == 1 ? 210 : 174,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: photos.length,
+                      separatorBuilder: (_, _) => const SizedBox(width: 12),
+                      itemBuilder: (context, index) {
+                        final photo = photos[index];
+                        final url =
+                            photo['mediumUrl'] as String? ??
+                            photo['fullUrl'] as String? ??
+                            photo['thumbUrl'] as String? ??
+                            '';
+                        return SizedBox(
+                          width: photos.length == 1
+                              ? MediaQuery.sizeOf(context).width - 32
+                              : 220,
+                          child: _OrderPhotoPreview(
+                            url: url,
+                            height: photos.length == 1 ? 210 : 174,
+                            borderRadius: 24,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                ],
+                Container(
+                  padding: const EdgeInsets.all(22),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(30),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x120F172A),
+                        blurRadius: 20,
+                        offset: Offset(0, 10),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        order['desc'] as String? ?? '',
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(
+                              color: const Color(0xFF475569),
+                              height: 1.45,
+                              fontWeight: FontWeight.w500,
+                            ),
+                      ),
+                      const SizedBox(height: 20),
+                      _OrderFactRow(
+                        label: 'Район',
+                        value: '${order['district']}, Душанбе',
+                      ),
+                      const SizedBox(height: 12),
+                      _OrderFactRow(
+                        label: 'Адрес',
+                        value: order['address'] as String? ?? 'Не указан',
+                      ),
+                      const SizedBox(height: 12),
+                      _OrderFactRow(
+                        label: 'Бюджет',
+                        value: order['budget'] as String? ?? '',
+                      ),
+                      const SizedBox(height: 12),
+                      _OrderFactRow(
+                        label: 'Когда',
+                        value: order['when'] as String? ?? '',
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+                if (widget.isMaster) ...[
+                  const SectionTitle(
+                    title: 'Перед откликом',
+                    subtitle:
+                        'Коротко опишите, когда готовы взять заказ и какую цену предлагаете.',
+                  ),
+                  const SizedBox(height: 12),
+                  InfoCard(
+                    icon: Icons.tips_and_updates_outlined,
+                    title: responses.isEmpty
+                        ? 'Вы можете стать первым'
+                        : 'Откликов уже: ${responses.length}',
+                    subtitle: selectedMasterId == null
+                        ? 'Чем понятнее комментарий и срок, тем выше шанс, что заказчик откроет именно ваш чат.'
+                        : 'Заказ уже закрыт для новых предложений.',
+                  ),
+                ] else ...[
+                  const SectionTitle(
+                    title: 'Отклики мастеров',
+                    subtitle:
+                        'Сравните цену, опыт и выберите подходящего исполнителя',
+                  ),
+                  const SizedBox(height: 12),
+                  if (responses.isEmpty)
+                    const EmptyState(
+                      icon: Icons.mark_chat_unread_outlined,
+                      text: 'Откликов пока нет',
+                      subtitle:
+                          'Когда мастера увидят заявку, их предложения появятся в этом списке.',
+                    ),
+                  for (final response in responses) ...[
+                    _ResponseCard(
+                      response: response,
+                      onOpenChat: () => _openChatForResponse(response),
+                      onOpenProfile: () =>
+                          _openMasterProfile(response['masterId'] as int),
+                      onSelect: _selectingResponse
+                          ? null
+                          : () => _selectMaster(response),
+                      isSelected:
+                          (response['masterId'] as num?)?.toInt() ==
+                          selectedMasterId,
+                      selectionLocked: selectedMasterId != null,
+                    ),
+                    const SizedBox(height: 14),
+                  ],
+                ],
               ],
-            ],
+            ),
           );
         },
       ),
@@ -2208,6 +2637,11 @@ class _MasterDetailScreenState extends State<MasterDetailScreen> {
       ),
       reviews: asMapList(results[1]['reviews']),
     );
+  }
+
+  Future<void> _refresh() async {
+    setState(() => _future = _load());
+    await _future;
   }
 
   Future<void> _openCreateOrder(Map<String, dynamic> master) async {
@@ -2301,282 +2735,294 @@ class _MasterDetailScreenState extends State<MasterDetailScreen> {
               titleSpacing: 0,
               title: const Text('Профиль мастера'),
             ),
-            body: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 112),
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(28),
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF18213A), Color(0xFF2847A6)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
+            body: RefreshIndicator(
+              onRefresh: _refresh,
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 112),
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(28),
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF18213A), Color(0xFF2847A6)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x160F172A),
+                          blurRadius: 22,
+                          offset: Offset(0, 12),
+                        ),
+                      ],
                     ),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Color(0x160F172A),
-                        blurRadius: 22,
-                        offset: Offset(0, 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              width: 88,
+                              height: 88,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(28),
+                                gradient: LinearGradient(
+                                  colors: [
+                                    accent,
+                                    accent.withValues(alpha: 0.72),
+                                  ],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                ),
+                                border: Border.all(
+                                  color: Colors.white.withValues(alpha: 0.22),
+                                ),
+                              ),
+                              alignment: Alignment.center,
+                              child: Text(
+                                initials,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 28,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    name,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .headlineSmall
+                                        ?.copyWith(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w800,
+                                          height: 1.1,
+                                        ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
+                                    children: [
+                                      _HeaderBadge(
+                                        label: verified
+                                            ? 'Проверенный профиль'
+                                            : 'Без верификации',
+                                      ),
+                                      _HeaderBadge(label: service),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Row(
+                                    children: [
+                                      const Icon(
+                                        Icons.star_rounded,
+                                        color: Color(0xFFFBBF24),
+                                        size: 18,
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        '$ratingText ($reviews отзывов)',
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 18),
+                        _AdaptiveStatGrid(
+                          minTileWidth: 96,
+                          children: [
+                            MetricCard(
+                              label: 'Рейтинг',
+                              value: ratingText,
+                              isInverted: true,
+                            ),
+                            MetricCard(
+                              label: 'Отзывы',
+                              value: '$reviews',
+                              isInverted: true,
+                            ),
+                            MetricCard(
+                              label: 'Проверка',
+                              value: verified ? 'Да' : 'Нет',
+                              isInverted: true,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  _AdaptiveStatGrid(
+                    minTileWidth: 150,
+                    children: [
+                      _MasterFactTile(
+                        icon: Icons.payments_outlined,
+                        title: 'Цена',
+                        value: price,
+                        accent: const Color(0xFF059669),
+                      ),
+                      _MasterFactTile(
+                        icon: Icons.home_repair_service_outlined,
+                        title: 'Специализация',
+                        value: service,
+                        accent: accent,
+                      ),
+                      _MasterFactTile(
+                        icon: verified
+                            ? Icons.verified_user_outlined
+                            : Icons.shield_outlined,
+                        title: 'Статус',
+                        value: verified
+                            ? 'Профиль подтверждён'
+                            : 'Без проверки',
+                        accent: verified
+                            ? const Color(0xFF2563EB)
+                            : const Color(0xFFF59E0B),
+                      ),
+                      _MasterFactTile(
+                        icon: Icons.rate_review_outlined,
+                        title: 'Отклик клиентов',
+                        value: '$reviews отзывов',
+                        accent: const Color(0xFF8B5CF6),
                       ),
                     ],
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  const SizedBox(height: 20),
+                  SectionTitle(
+                    title: 'О мастере',
+                    subtitle:
+                        'Кратко о специализации, опыте и том, что важно знать перед выбором.',
+                  ),
+                  const SizedBox(height: 12),
+                  InfoCard(
+                    icon: Icons.description_outlined,
+                    title: service,
+                    subtitle:
+                        master['bio'] as String? ??
+                        'Описание пока не добавлено.',
+                  ),
+                  const SizedBox(height: 20),
+                  SectionTitle(
+                    title: 'Услуги',
+                    subtitle: 'Основное направление и дополнительные задачи.',
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
                     children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Container(
-                            width: 88,
-                            height: 88,
+                      _SelectionChip(
+                        icon: _categoryIcon(service),
+                        label: service,
+                        active: true,
+                        onTap: () {},
+                      ),
+                      for (final skill in skills)
+                        _CompactSkillTag(label: skill),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  SectionTitle(
+                    title: 'Отзывы клиентов',
+                    subtitle:
+                        'Посмотрите, что пишут заказчики о скорости, качестве и общении.',
+                  ),
+                  const SizedBox(height: 12),
+                  if (masterReviews.isEmpty)
+                    const EmptyState(
+                      icon: Icons.reviews_outlined,
+                      text: 'Отзывов пока нет',
+                      subtitle:
+                          'Этот мастер ещё не получил публичных отзывов от клиентов.',
+                    )
+                  else ...[
+                    for (final review in masterReviews) ...[
+                      _MasterReviewCard(review: review),
+                      const SizedBox(height: 10),
+                    ],
+                  ],
+                  const SizedBox(height: 20),
+                  SectionTitle(
+                    title: 'Портфолио',
+                    subtitle: 'Примеры работ по этой специализации.',
+                  ),
+                  const SizedBox(height: 12),
+                  if (portfolio.isEmpty)
+                    const EmptyState(
+                      icon: Icons.photo_library_outlined,
+                      text: 'Портфолио пока не добавлено',
+                      subtitle:
+                          'Можно ориентироваться на отзывы, специализацию и описание мастера.',
+                    )
+                  else ...[
+                    SizedBox(
+                      height: 156,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: portfolio.length,
+                        separatorBuilder: (_, _) => const SizedBox(width: 12),
+                        itemBuilder: (context, index) {
+                          final item = portfolio[index];
+                          return Container(
+                            width: 156,
+                            padding: const EdgeInsets.all(18),
                             decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(28),
+                              borderRadius: BorderRadius.circular(24),
                               gradient: LinearGradient(
                                 colors: [
-                                  accent,
-                                  accent.withValues(alpha: 0.72),
+                                  _portfolioColor(index),
+                                  _portfolioColor(
+                                    index,
+                                  ).withValues(alpha: 0.72),
                                 ],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
                               ),
-                              border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.22),
-                              ),
+                              boxShadow: const [
+                                BoxShadow(
+                                  color: Color(0x120F172A),
+                                  blurRadius: 16,
+                                  offset: Offset(0, 10),
+                                ),
+                              ],
                             ),
-                            alignment: Alignment.center,
-                            child: Text(
-                              initials,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 28,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  name,
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .headlineSmall
-                                      ?.copyWith(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w800,
-                                        height: 1.1,
-                                      ),
+                                  item,
+                                  style: const TextStyle(fontSize: 34),
                                 ),
-                                const SizedBox(height: 10),
-                                Wrap(
-                                  spacing: 8,
-                                  runSpacing: 8,
-                                  children: [
-                                    _HeaderBadge(
-                                      label: verified
-                                          ? 'Проверенный профиль'
-                                          : 'Без верификации',
-                                    ),
-                                    _HeaderBadge(label: service),
-                                  ],
-                                ),
-                                const SizedBox(height: 12),
-                                Row(
-                                  children: [
-                                    const Icon(
-                                      Icons.star_rounded,
-                                      color: Color(0xFFFBBF24),
-                                      size: 18,
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      '$ratingText ($reviews отзывов)',
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                  ],
+                                const Spacer(),
+                                Text(
+                                  'Работа ${index + 1}',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w700,
+                                  ),
                                 ),
                               ],
                             ),
-                          ),
-                        ],
+                          );
+                        },
                       ),
-                      const SizedBox(height: 18),
-                      _AdaptiveStatGrid(
-                        minTileWidth: 96,
-                        children: [
-                          MetricCard(
-                            label: 'Рейтинг',
-                            value: ratingText,
-                            isInverted: true,
-                          ),
-                          MetricCard(
-                            label: 'Отзывы',
-                            value: '$reviews',
-                            isInverted: true,
-                          ),
-                          MetricCard(
-                            label: 'Проверка',
-                            value: verified ? 'Да' : 'Нет',
-                            isInverted: true,
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-                _AdaptiveStatGrid(
-                  minTileWidth: 150,
-                  children: [
-                    _MasterFactTile(
-                      icon: Icons.payments_outlined,
-                      title: 'Цена',
-                      value: price,
-                      accent: const Color(0xFF059669),
                     ),
-                    _MasterFactTile(
-                      icon: Icons.home_repair_service_outlined,
-                      title: 'Специализация',
-                      value: service,
-                      accent: accent,
-                    ),
-                    _MasterFactTile(
-                      icon: verified
-                          ? Icons.verified_user_outlined
-                          : Icons.shield_outlined,
-                      title: 'Статус',
-                      value: verified ? 'Профиль подтверждён' : 'Без проверки',
-                      accent: verified
-                          ? const Color(0xFF2563EB)
-                          : const Color(0xFFF59E0B),
-                    ),
-                    _MasterFactTile(
-                      icon: Icons.rate_review_outlined,
-                      title: 'Отклик клиентов',
-                      value: '$reviews отзывов',
-                      accent: const Color(0xFF8B5CF6),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                SectionTitle(
-                  title: 'О мастере',
-                  subtitle:
-                      'Кратко о специализации, опыте и том, что важно знать перед выбором.',
-                ),
-                const SizedBox(height: 12),
-                InfoCard(
-                  icon: Icons.description_outlined,
-                  title: service,
-                  subtitle:
-                      master['bio'] as String? ?? 'Описание пока не добавлено.',
-                ),
-                const SizedBox(height: 20),
-                SectionTitle(
-                  title: 'Услуги',
-                  subtitle: 'Основное направление и дополнительные задачи.',
-                ),
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    _SelectionChip(
-                      icon: _categoryIcon(service),
-                      label: service,
-                      active: true,
-                      onTap: () {},
-                    ),
-                    for (final skill in skills) _CompactSkillTag(label: skill),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                SectionTitle(
-                  title: 'Отзывы клиентов',
-                  subtitle:
-                      'Посмотрите, что пишут заказчики о скорости, качестве и общении.',
-                ),
-                const SizedBox(height: 12),
-                if (masterReviews.isEmpty)
-                  const EmptyState(
-                    icon: Icons.reviews_outlined,
-                    text: 'Отзывов пока нет',
-                    subtitle:
-                        'Этот мастер ещё не получил публичных отзывов от клиентов.',
-                  )
-                else ...[
-                  for (final review in masterReviews) ...[
-                    _MasterReviewCard(review: review),
-                    const SizedBox(height: 10),
                   ],
                 ],
-                const SizedBox(height: 20),
-                SectionTitle(
-                  title: 'Портфолио',
-                  subtitle: 'Примеры работ по этой специализации.',
-                ),
-                const SizedBox(height: 12),
-                if (portfolio.isEmpty)
-                  const EmptyState(
-                    icon: Icons.photo_library_outlined,
-                    text: 'Портфолио пока не добавлено',
-                    subtitle:
-                        'Можно ориентироваться на отзывы, специализацию и описание мастера.',
-                  )
-                else ...[
-                  SizedBox(
-                    height: 156,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: portfolio.length,
-                      separatorBuilder: (_, _) => const SizedBox(width: 12),
-                      itemBuilder: (context, index) {
-                        final item = portfolio[index];
-                        return Container(
-                          width: 156,
-                          padding: const EdgeInsets.all(18),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(24),
-                            gradient: LinearGradient(
-                              colors: [
-                                _portfolioColor(index),
-                                _portfolioColor(index).withValues(alpha: 0.72),
-                              ],
-                            ),
-                            boxShadow: const [
-                              BoxShadow(
-                                color: Color(0x120F172A),
-                                blurRadius: 16,
-                                offset: Offset(0, 10),
-                              ),
-                            ],
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(item, style: const TextStyle(fontSize: 34)),
-                              const Spacer(),
-                              Text(
-                                'Работа ${index + 1}',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ],
+              ),
             ),
             bottomNavigationBar: SafeArea(
               top: false,
@@ -2630,29 +3076,93 @@ class ChatScreen extends StatefulWidget {
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> {
+// Chat updates via polling (not push/websocket): while this screen is open,
+// it asks the server for anything newer than the last message it has seen
+// every _pollInterval, and pauses while the app is backgrounded so it isn't
+// polling from a screen nobody's looking at.
+const _pollInterval = Duration(seconds: 12);
+
+class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   final _controller = TextEditingController();
-  late Future<List<Map<String, dynamic>>> _future;
+  late Future<void> _initialLoad;
+  List<Map<String, dynamic>> _messages = const [];
+  int _lastMessageId = 0;
   bool _sending = false;
+  bool _polling = false;
   String? _sendError;
+  Timer? _pollTimer;
 
   @override
   void initState() {
     super.initState();
-    _future = _load();
+    WidgetsBinding.instance.addObserver(this);
+    _initialLoad = _loadInitial();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _pollTimer?.cancel();
     _controller.dispose();
     super.dispose();
   }
 
-  Future<List<Map<String, dynamic>>> _load() async {
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _poll();
+      _startPolling();
+    } else {
+      _pollTimer?.cancel();
+    }
+  }
+
+  int _maxMessageId(List<Map<String, dynamic>> messages) {
+    var maxId = _lastMessageId;
+    for (final message in messages) {
+      final id = (message['id'] as num?)?.toInt() ?? 0;
+      if (id > maxId) maxId = id;
+    }
+    return maxId;
+  }
+
+  Future<void> _loadInitial() async {
     final data = await widget.apiClient.getJson(
       '/chats/${widget.chatId}/messages',
     );
-    return asMapList(data['messages']);
+    final messages = asMapList(data['messages']);
+    if (!mounted) return;
+    setState(() {
+      _messages = messages;
+      _lastMessageId = _maxMessageId(messages);
+    });
+    _startPolling();
+  }
+
+  void _startPolling() {
+    _pollTimer?.cancel();
+    _pollTimer = Timer.periodic(_pollInterval, (_) => _poll());
+  }
+
+  Future<void> _poll() async {
+    if (_polling || !mounted) return;
+    _polling = true;
+    try {
+      final data = await widget.apiClient.getJson(
+        '/chats/${widget.chatId}/messages?since=$_lastMessageId',
+      );
+      final newMessages = asMapList(data['messages']);
+      if (newMessages.isEmpty || !mounted) return;
+      setState(() {
+        _messages = [..._messages, ...newMessages];
+        _lastMessageId = _maxMessageId(newMessages);
+      });
+    } on ApiException {
+      // A transient poll failure shouldn't interrupt the chat UI - the next
+      // tick just tries again.
+    } finally {
+      _polling = false;
+    }
   }
 
   Future<void> _send() async {
@@ -2664,14 +3174,20 @@ class _ChatScreenState extends State<ChatScreen> {
       _sendError = null;
     });
     try {
-      await widget.apiClient.postJson(
+      final res = await widget.apiClient.postJson(
         '/chats/${widget.chatId}/messages',
         body: {'text': text, 'fromRole': fromRole},
       );
       _controller.clear();
-      setState(() {
-        _future = _load();
-      });
+      final sent = Map<String, dynamic>.from(
+        res['message'] as Map? ?? const <String, dynamic>{},
+      );
+      if (sent.isNotEmpty && mounted) {
+        setState(() {
+          _messages = [..._messages, sent];
+          _lastMessageId = _maxMessageId([sent]);
+        });
+      }
     } on ApiException catch (error) {
       setState(() {
         _sendError = error.message;
@@ -2773,8 +3289,8 @@ class _ChatScreenState extends State<ChatScreen> {
               color: widget.isMaster
                   ? const Color(0xFFF6F8FB)
                   : const Color(0xFFEAF0F8),
-              child: FutureBuilder<List<Map<String, dynamic>>>(
-                future: _future,
+              child: FutureBuilder<void>(
+                future: _initialLoad,
                 builder: (context, snapshot) {
                   if (snapshot.connectionState != ConnectionState.done) {
                     return const Center(child: CircularProgressIndicator());
@@ -2784,13 +3300,13 @@ class _ChatScreenState extends State<ChatScreen> {
                       message: snapshot.error.toString(),
                       onRetry: () async {
                         setState(() {
-                          _future = _load();
+                          _initialLoad = _loadInitial();
                         });
-                        await _future;
+                        await _initialLoad;
                       },
                     );
                   }
-                  final messages = snapshot.data ?? [];
+                  final messages = _messages;
                   if (messages.isEmpty) {
                     return Center(
                       child: Padding(
@@ -2807,93 +3323,99 @@ class _ChatScreenState extends State<ChatScreen> {
                       ),
                     );
                   }
-                  return ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: messages.length,
-                    itemBuilder: (context, index) {
-                      final message = messages[index];
-                      final fromRole =
-                          message['fromRole'] as String? ?? 'customer';
-                      final mine = widget.isMaster
-                          ? fromRole == 'master'
-                          : fromRole == 'customer';
-                      return Align(
-                        alignment: mine
-                            ? Alignment.centerRight
-                            : Alignment.centerLeft,
-                        child: Container(
-                          constraints: BoxConstraints(
-                            maxWidth: widget.isMaster ? 420 : 380,
-                          ),
-                          margin: const EdgeInsets.only(bottom: 14),
-                          padding: EdgeInsets.fromLTRB(
-                            18,
-                            widget.isMaster ? 14 : 16,
-                            18,
-                            12,
-                          ),
-                          decoration: BoxDecoration(
-                            color: mine
-                                ? const Color(0xFF2B5DE0)
-                                : Colors.white,
-                            borderRadius: BorderRadius.circular(
-                              widget.isMaster ? 22 : 28,
+                  return RefreshIndicator(
+                    onRefresh: () async {
+                      setState(() => _initialLoad = _loadInitial());
+                      await _initialLoad;
+                    },
+                    child: ListView.builder(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: messages.length,
+                      itemBuilder: (context, index) {
+                        final message = messages[index];
+                        final fromRole =
+                            message['fromRole'] as String? ?? 'customer';
+                        final mine = widget.isMaster
+                            ? fromRole == 'master'
+                            : fromRole == 'customer';
+                        return Align(
+                          alignment: mine
+                              ? Alignment.centerRight
+                              : Alignment.centerLeft,
+                          child: Container(
+                            constraints: BoxConstraints(
+                              maxWidth: widget.isMaster ? 420 : 380,
                             ),
-                            border: widget.isMaster && !mine
-                                ? Border.all(color: const Color(0xFFE2E8F0))
-                                : null,
-                            boxShadow: widget.isMaster
-                                ? null
-                                : const [
-                                    BoxShadow(
-                                      color: Color(0x100F172A),
-                                      blurRadius: 14,
-                                      offset: Offset(0, 8),
+                            margin: const EdgeInsets.only(bottom: 14),
+                            padding: EdgeInsets.fromLTRB(
+                              18,
+                              widget.isMaster ? 14 : 16,
+                              18,
+                              12,
+                            ),
+                            decoration: BoxDecoration(
+                              color: mine
+                                  ? const Color(0xFF2B5DE0)
+                                  : Colors.white,
+                              borderRadius: BorderRadius.circular(
+                                widget.isMaster ? 22 : 28,
+                              ),
+                              border: widget.isMaster && !mine
+                                  ? Border.all(color: const Color(0xFFE2E8F0))
+                                  : null,
+                              boxShadow: widget.isMaster
+                                  ? null
+                                  : const [
+                                      BoxShadow(
+                                        color: Color(0x100F172A),
+                                        blurRadius: 14,
+                                        offset: Offset(0, 8),
+                                      ),
+                                    ],
+                            ),
+                            child: Column(
+                              crossAxisAlignment: mine
+                                  ? CrossAxisAlignment.end
+                                  : CrossAxisAlignment.start,
+                              children: [
+                                if (!mine) ...[
+                                  Text(
+                                    widget.title,
+                                    style: const TextStyle(
+                                      color: Color(0xFF64748B),
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
                                     ),
-                                  ],
-                          ),
-                          child: Column(
-                            crossAxisAlignment: mine
-                                ? CrossAxisAlignment.end
-                                : CrossAxisAlignment.start,
-                            children: [
-                              if (!mine) ...[
+                                  ),
+                                  const SizedBox(height: 6),
+                                ],
                                 Text(
-                                  widget.title,
-                                  style: const TextStyle(
-                                    color: Color(0xFF64748B),
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
+                                  message['text'] as String? ?? '',
+                                  style: TextStyle(
+                                    color: mine
+                                        ? Colors.white
+                                        : const Color(0xFF1F2940),
+                                    fontSize: widget.isMaster ? 14 : 15,
+                                    fontWeight: FontWeight.w500,
+                                    height: 1.45,
                                   ),
                                 ),
-                                const SizedBox(height: 6),
+                                const SizedBox(height: 8),
+                                Text(
+                                  message['createdAt'] as String? ?? '14:05',
+                                  style: TextStyle(
+                                    color: mine
+                                        ? Colors.white.withValues(alpha: 0.7)
+                                        : const Color(0xFF94A3B8),
+                                    fontSize: 11,
+                                  ),
+                                ),
                               ],
-                              Text(
-                                message['text'] as String? ?? '',
-                                style: TextStyle(
-                                  color: mine
-                                      ? Colors.white
-                                      : const Color(0xFF1F2940),
-                                  fontSize: widget.isMaster ? 14 : 15,
-                                  fontWeight: FontWeight.w500,
-                                  height: 1.45,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                message['createdAt'] as String? ?? '14:05',
-                                style: TextStyle(
-                                  color: mine
-                                      ? Colors.white.withValues(alpha: 0.7)
-                                      : const Color(0xFF94A3B8),
-                                  fontSize: 11,
-                                ),
-                              ),
-                            ],
+                            ),
                           ),
-                        ),
-                      );
-                    },
+                        );
+                      },
+                    ),
                   );
                 },
               ),
@@ -3029,7 +3551,7 @@ class _WalletScreenState extends State<WalletScreen> {
     });
     try {
       await widget.apiClient.postJson(
-        '/wallet/topup?wrap=1',
+        '/wallet/topup',
         body: {'amount': int.tryParse(_amount.text) ?? 0},
       );
       await _refresh();
@@ -3092,14 +3614,6 @@ class _WalletScreenState extends State<WalletScreen> {
                               color: Colors.white,
                               fontWeight: FontWeight.w800,
                             ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        '≈ ${(wallet['balance'] as int? ?? 85) / 11} USD',
-                        style: const TextStyle(
-                          color: Color(0xFF94A3B8),
-                          fontSize: 16,
-                        ),
                       ),
                       const SizedBox(height: 24),
                       FilledButton.icon(
@@ -3325,6 +3839,152 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 }
 
+/// Lets a master fill in/edit their own public directory listing
+/// (name/service/bio/skills/portfolio - PATCH /api/masters/me). Price,
+/// rating and review count are system-managed and not editable here.
+class EditMasterListingScreen extends StatefulWidget {
+  const EditMasterListingScreen({
+    super.key,
+    required this.apiClient,
+    required this.listing,
+  });
+
+  final ApiClient apiClient;
+  final Map<String, dynamic> listing;
+
+  @override
+  State<EditMasterListingScreen> createState() =>
+      _EditMasterListingScreenState();
+}
+
+class _EditMasterListingScreenState extends State<EditMasterListingScreen> {
+  late final TextEditingController _name;
+  late final TextEditingController _service;
+  late final TextEditingController _bio;
+  late final TextEditingController _skills;
+  late final TextEditingController _portfolio;
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    final listing = widget.listing;
+    _name = TextEditingController(text: listing['name'] as String? ?? '');
+    _service = TextEditingController(text: listing['service'] as String? ?? '');
+    _bio = TextEditingController(text: listing['bio'] as String? ?? '');
+    _skills = TextEditingController(
+      text: List<String>.from(
+        listing['skills'] as List? ?? const [],
+      ).join(', '),
+    );
+    _portfolio = TextEditingController(
+      text: List<String>.from(
+        listing['portfolio'] as List? ?? const [],
+      ).join(', '),
+    );
+  }
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _service.dispose();
+    _bio.dispose();
+    _skills.dispose();
+    _portfolio.dispose();
+    super.dispose();
+  }
+
+  List<String> _parseCommaList(String text) {
+    return text
+        .split(',')
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .toList();
+  }
+
+  Future<void> _save() async {
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await widget.apiClient.patchJson(
+        '/masters/me',
+        body: {
+          'name': _name.text,
+          'service': _service.text,
+          'bio': _bio.text,
+          'skills': _parseCommaList(_skills.text),
+          'portfolio': _parseCommaList(_portfolio.text),
+        },
+      );
+      if (mounted) Navigator.of(context).pop(true);
+    } on ApiException catch (error) {
+      setState(() => _error = error.message);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Профиль в каталоге')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          TextField(
+            controller: _name,
+            decoration: const InputDecoration(labelText: 'Имя'),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _service,
+            decoration: const InputDecoration(labelText: 'Услуга'),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _bio,
+            minLines: 3,
+            maxLines: 5,
+            decoration: const InputDecoration(labelText: 'О себе'),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _skills,
+            decoration: const InputDecoration(
+              labelText: 'Навыки',
+              hintText: 'краны, бойлеры, трубы',
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _portfolio,
+            decoration: const InputDecoration(
+              labelText: 'Портфолио',
+              hintText: 'через запятую',
+            ),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              _error!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ],
+          const SizedBox(height: 20),
+          FilledButton.icon(
+            onPressed: _saving ? null : _save,
+            icon: const Icon(Icons.save_outlined),
+            label: Text(_saving ? 'Сохранение...' : 'Сохранить'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class VerificationScreen extends StatefulWidget {
   const VerificationScreen({super.key, required this.apiClient});
 
@@ -3391,7 +4051,7 @@ class _VerificationScreenState extends State<VerificationScreen> {
       _error = null;
     });
     try {
-      await widget.apiClient.postJson('/verification?wrap=1');
+      await widget.apiClient.postJson('/verification');
       await _refresh();
     } on ApiException catch (error) {
       setState(() => _error = error.message);
@@ -3422,114 +4082,127 @@ class _VerificationScreenState extends State<VerificationScreen> {
           final currentStep = verified
               ? 5
               : (documents.length >= 2 ? 3 : documents.length + 1);
-          return ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              Container(
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(30),
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF141B31), Color(0xFF253D8F)],
+          return RefreshIndicator(
+            onRefresh: _refresh,
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(30),
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF141B31), Color(0xFF253D8F)],
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Текущий статус',
+                        style: TextStyle(
+                          color: Color(0xFF94A3B8),
+                          fontSize: 18,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        verified
+                            ? 'Профиль активен · Шаг 5/5'
+                            : 'В процессе · Шаг $currentStep/5',
+                        style: Theme.of(context).textTheme.headlineSmall
+                            ?.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w800,
+                            ),
+                      ),
+                      const SizedBox(height: 16),
+                      LinearProgressIndicator(
+                        value: currentStep / 5,
+                        minHeight: 6,
+                        borderRadius: BorderRadius.circular(999),
+                        backgroundColor: Colors.white.withValues(alpha: 0.12),
+                        valueColor: const AlwaysStoppedAnimation(
+                          Color(0xFFF59E0B),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      const Text(
+                        'SLA: не более 24 часов',
+                        style: TextStyle(
+                          color: Color(0xFF64748B),
+                          fontSize: 16,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Текущий статус',
-                      style: TextStyle(color: Color(0xFF94A3B8), fontSize: 18),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      verified
-                          ? 'Профиль активен · Шаг 5/5'
-                          : 'В процессе · Шаг $currentStep/5',
-                      style: Theme.of(context).textTheme.headlineSmall
-                          ?.copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w800,
-                          ),
-                    ),
-                    const SizedBox(height: 16),
-                    LinearProgressIndicator(
-                      value: currentStep / 5,
-                      minHeight: 6,
-                      borderRadius: BorderRadius.circular(999),
-                      backgroundColor: Colors.white.withValues(alpha: 0.12),
-                      valueColor: const AlwaysStoppedAnimation(
-                        Color(0xFFF59E0B),
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    const Text(
-                      'SLA: не более 24 часов',
-                      style: TextStyle(color: Color(0xFF64748B), fontSize: 16),
-                    ),
-                  ],
+                const SizedBox(height: 26),
+                _VerificationTimeline(
+                  currentStep: currentStep,
+                  documentsCount: documents.length,
+                  verified: verified,
                 ),
-              ),
-              const SizedBox(height: 26),
-              _VerificationTimeline(
-                currentStep: currentStep,
-                documentsCount: documents.length,
-                verified: verified,
-              ),
-              const SizedBox(height: 24),
-              const SectionTitle(title: 'Документы'),
-              const SizedBox(height: 8),
-              if (documents.isEmpty)
-                const EmptyState(
-                  icon: Icons.file_upload_outlined,
-                  text: 'Документы еще не загружены',
+                const SizedBox(height: 24),
+                const SectionTitle(title: 'Документы'),
+                const SizedBox(height: 8),
+                if (documents.isEmpty)
+                  const EmptyState(
+                    icon: Icons.file_upload_outlined,
+                    text: 'Документы еще не загружены',
+                  ),
+                for (final document in documents) ...[
+                  InfoCard(
+                    icon: Icons.description_outlined,
+                    title: document['documentType'] as String? ?? 'Документ',
+                    subtitle:
+                        '${document['status']} · ${document['fileUrl'] ?? ''}',
+                  ),
+                  const SizedBox(height: 10),
+                ],
+                const SizedBox(height: 20),
+                const SectionTitle(title: 'Загрузить документ'),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _documentType,
+                  decoration: const InputDecoration(
+                    labelText: 'Тип документа',
+                    prefixIcon: Icon(Icons.badge_outlined),
+                  ),
                 ),
-              for (final document in documents) ...[
-                InfoCard(
-                  icon: Icons.description_outlined,
-                  title: document['documentType'] as String? ?? 'Документ',
-                  subtitle:
-                      '${document['status']} · ${document['fileUrl'] ?? ''}',
-                ),
-                const SizedBox(height: 10),
-              ],
-              const SizedBox(height: 20),
-              const SectionTitle(title: 'Загрузить документ'),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _documentType,
-                decoration: const InputDecoration(
-                  labelText: 'Тип документа',
-                  prefixIcon: Icon(Icons.badge_outlined),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _fileUrl,
-                decoration: const InputDecoration(
-                  labelText: 'Ссылка на файл',
-                  prefixIcon: Icon(Icons.link),
-                ),
-              ),
-              if (_error != null) ...[
                 const SizedBox(height: 12),
-                Text(
-                  _error!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                TextField(
+                  controller: _fileUrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Ссылка на файл',
+                    prefixIcon: Icon(Icons.link),
+                  ),
                 ),
+                if (_error != null) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    _error!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 16),
+                FilledButton.icon(
+                  onPressed: _sending ? null : _uploadDocument,
+                  icon: const Icon(Icons.upload_file_outlined),
+                  label: Text(_sending ? 'Отправка...' : 'Отправить документ'),
+                ),
+                if (kDebugMode) ...[
+                  const SizedBox(height: 10),
+                  OutlinedButton.icon(
+                    onPressed: _sending ? null : _approveDev,
+                    icon: const Icon(Icons.done_all_outlined),
+                    label: const Text('Dev-подтвердить'),
+                  ),
+                ],
               ],
-              const SizedBox(height: 16),
-              FilledButton.icon(
-                onPressed: _sending ? null : _uploadDocument,
-                icon: const Icon(Icons.upload_file_outlined),
-                label: Text(_sending ? 'Отправка...' : 'Отправить документ'),
-              ),
-              const SizedBox(height: 10),
-              OutlinedButton.icon(
-                onPressed: _sending ? null : _approveDev,
-                icon: const Icon(Icons.done_all_outlined),
-                label: const Text('Dev-подтвердить'),
-              ),
-            ],
+            ),
           );
         },
       ),
@@ -3556,6 +4229,25 @@ class _ResponseSheetState extends State<ResponseSheet> {
   final _comment = TextEditingController();
   bool _sending = false;
   String? _error;
+  int? _balance;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadWallet();
+  }
+
+  Future<void> _loadWallet() async {
+    try {
+      final res = await widget.apiClient.getJson('/wallet');
+      if (!mounted) return;
+      final wallet = res['wallet'] as Map<String, dynamic>?;
+      setState(() => _balance = wallet?['balance'] as int?);
+    } on ApiException {
+      // Leave _balance null - the UI shows a neutral placeholder instead of
+      // a fake number when the real balance can't be fetched.
+    }
+  }
 
   @override
   void dispose() {
@@ -3662,16 +4354,16 @@ class _ResponseSheetState extends State<ResponseSheet> {
           ],
           const SizedBox(height: 16),
           Row(
-            children: const [
+            children: [
               Text(
-                'Баланс: 85 TJS',
-                style: TextStyle(
+                _balance == null ? 'Баланс: —' : 'Баланс: $_balance TJS',
+                style: const TextStyle(
                   color: Color(0xFF64748B),
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              Spacer(),
-              Text(
+              const Spacer(),
+              const Text(
                 'Спишется: -4 TJS',
                 style: TextStyle(
                   color: Color(0xFFEF4444),
@@ -4918,6 +5610,7 @@ class _CustomerOrderCard extends StatelessWidget {
     final views = '${order['views'] ?? 0}';
     final createdAt = _orderCreatedLabel(order['createdAt'] as String?);
     final hasPreferredMaster = (order['preferredMasterId'] as num?) != null;
+    final photoUrl = firstOrderPhotoUrl(order);
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -4995,6 +5688,10 @@ class _CustomerOrderCard extends StatelessWidget {
                 height: 1.35,
               ),
             ),
+            if (photoUrl != null) ...[
+              const SizedBox(height: 12),
+              _OrderPhotoPreview(url: photoUrl, height: 142),
+            ],
             const SizedBox(height: 14),
             Container(
               padding: const EdgeInsets.all(14),
@@ -5137,6 +5834,57 @@ class _TinyStat extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _OrderPhotoPreview extends StatelessWidget {
+  const _OrderPhotoPreview({
+    required this.url,
+    this.height = 150,
+    this.borderRadius = 18,
+  });
+
+  final String url;
+  final double height;
+  final double borderRadius;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(borderRadius),
+      child: SizedBox(
+        width: double.infinity,
+        height: height,
+        child: Image.network(
+          url,
+          fit: BoxFit.cover,
+          loadingBuilder: (context, child, loadingProgress) {
+            if (loadingProgress == null) return child;
+            return Container(
+              color: const Color(0xFFF1F5F9),
+              child: const Center(
+                child: SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            );
+          },
+          errorBuilder: (context, error, stackTrace) {
+            return Container(
+              color: const Color(0xFFF8FAFC),
+              child: const Center(
+                child: Icon(
+                  Icons.broken_image_outlined,
+                  color: Color(0xFF94A3B8),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
     );
   }
 }
@@ -5890,6 +6638,7 @@ class _MasterJobCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final photoUrl = firstOrderPhotoUrl(order);
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -5939,6 +6688,10 @@ class _MasterJobCard extends StatelessWidget {
                 fontWeight: FontWeight.w500,
               ),
             ),
+            if (photoUrl != null) ...[
+              const SizedBox(height: 12),
+              _OrderPhotoPreview(url: photoUrl, height: 136),
+            ],
             const SizedBox(height: 12),
             Wrap(
               spacing: 14,
@@ -5964,7 +6717,7 @@ class _MasterJobCard extends StatelessWidget {
               children: [
                 _TinyStat(
                   icon: Icons.visibility_outlined,
-                  text: '${order['views'] ?? 8}',
+                  text: '${order['views'] ?? 0}',
                 ),
                 const SizedBox(width: 16),
                 _TinyStat(
@@ -7041,6 +7794,39 @@ List<Map<String, dynamic>> asMapList(Object? value) {
   return value.map((item) => Map<String, dynamic>.from(item as Map)).toList();
 }
 
+void normalizeOrderPhotoUrls(
+  List<Map<String, dynamic>> orders,
+  ApiClient apiClient,
+) {
+  for (final order in orders) {
+    final photos = asMapList(order['photos']);
+    for (final photo in photos) {
+      for (final key in const ['thumbUrl', 'mediumUrl', 'fullUrl']) {
+        final url = photo[key] as String? ?? '';
+        if (url.isNotEmpty) {
+          photo[key] = apiClient.mediaUrl(url);
+        }
+      }
+    }
+    if (photos.isNotEmpty) {
+      order['photos'] = photos;
+    }
+  }
+}
+
+List<Map<String, dynamic>> orderPhotos(Map<String, dynamic> order) {
+  return asMapList(order['photos']);
+}
+
+String? firstOrderPhotoUrl(Map<String, dynamic> order) {
+  final photos = orderPhotos(order);
+  if (photos.isEmpty) return null;
+  final first = photos.first;
+  return first['mediumUrl'] as String? ??
+      first['thumbUrl'] as String? ??
+      first['fullUrl'] as String?;
+}
+
 class DashboardHero extends StatelessWidget {
   const DashboardHero({
     super.key,
@@ -7247,40 +8033,32 @@ bool _orderStatusIsActive(String? status) {
       value == 'мастер выбран';
 }
 
+// The backend stores the display label directly as the status value (in
+// Russian, e.g. "Активная"/"Мастер выбран"/"Завершена"/"Отменена" - see
+// createOrder/selectMasterForOrder/updateOrderStatus in orders.go), not an
+// English status code, so these match against the real stored strings.
 String _orderStatusLabel(String? status) {
-  final value = (status ?? '').toLowerCase();
-  switch (value) {
-    case 'new':
-    case 'open':
-    case 'active':
-    case 'published':
-      return 'Активна';
-    case 'pending':
-      return 'На проверке';
-    case 'in_progress':
-      return 'В работе';
-    case 'мастер выбран':
-      return 'Мастер выбран';
-    case 'completed':
-    case 'done':
+  switch (status) {
+    case 'Завершена':
       return 'Завершена';
-    case 'cancelled':
-    case 'canceled':
+    case 'Отменена':
       return 'Отменена';
+    case 'Мастер выбран':
+      return 'Мастер выбран';
+    case 'Новая':
+      return 'Новая';
+    case 'Выбор мастера':
+      return 'Выбор мастера';
     default:
-      return 'Активна';
+      return 'Активная';
   }
 }
 
 StatusTone _orderStatusTone(String? status) {
-  final value = (status ?? '').toLowerCase();
-  switch (value) {
-    case 'completed':
-    case 'done':
+  switch (status) {
+    case 'Завершена':
       return StatusTone.success;
-    case 'pending':
-    case 'cancelled':
-    case 'canceled':
+    case 'Отменена':
       return StatusTone.warning;
     default:
       return StatusTone.neutral;
@@ -7288,19 +8066,14 @@ StatusTone _orderStatusTone(String? status) {
 }
 
 IconData _orderStatusIcon(String? status) {
-  final value = (status ?? '').toLowerCase();
-  switch (value) {
-    case 'completed':
-    case 'done':
+  switch (status) {
+    case 'Завершена':
       return Icons.check_circle_outline;
-    case 'in_progress':
-      return Icons.construction_outlined;
-    case 'мастер выбран':
+    case 'Мастер выбран':
       return Icons.verified_user_outlined;
-    case 'pending':
+    case 'Выбор мастера':
       return Icons.pending_actions_outlined;
-    case 'cancelled':
-    case 'canceled':
+    case 'Отменена':
       return Icons.cancel_outlined;
     default:
       return Icons.bolt_outlined;

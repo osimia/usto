@@ -63,17 +63,34 @@ func (l *ipRateLimiter) allow(ip string) bool {
 	return bucket.allow()
 }
 
-// rateLimitMW throttles only the given paths (by exact match), per client IP.
-func rateLimitMW(limiter *ipRateLimiter, paths map[string]bool) func(http.Handler) http.Handler {
+// rateLimitMW throttles only requests matched by `matches`, per client IP.
+func rateLimitMW(limiter *ipRateLimiter, matches func(*http.Request) bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if paths[r.URL.Path] && !limiter.allow(clientIP(r)) {
+			if matches(r) && !limiter.allow(clientIP(r)) {
 				writeError(w, http.StatusTooManyRequests, "rate_limited", "too many requests, try again later")
 				return
 			}
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// isAuthPath matches the login endpoint, guessed at per-IP since there's no
+// SMS code to prove phone ownership.
+func isAuthPath(r *http.Request) bool {
+	return authRateLimitedPaths[r.URL.Path]
+}
+
+// isMoneyMovingPath matches wallet top-up and response creation (including
+// the legacy /api/responses path) — anything that debits/credits a wallet,
+// throttled to slow down spamming rather than to enforce a hard security
+// boundary (that's the caller's own auth, checked separately).
+func isMoneyMovingPath(r *http.Request) bool {
+	if r.Method != http.MethodPost {
+		return false
+	}
+	return r.URL.Path == "/api/wallet/topup" || strings.HasSuffix(r.URL.Path, "/responses")
 }
 
 func clientIP(r *http.Request) string {

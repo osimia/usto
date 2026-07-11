@@ -26,11 +26,9 @@ go run .
 http://localhost:8080
 ```
 
-Демо-вход:
-
-```text
-SMS-код: 1234
-```
+Вход — без SMS-кода: указываете номер телефона и роль (`customer`/`master`). Существующий
+номер входит сразу; новый номер должен при этом же входе указать ФИО, город и район —
+только тогда создаётся аккаунт (см. пример ниже, `POST /api/auth/login`).
 
 ## Настройки
 
@@ -46,10 +44,17 @@ PORT=3000 go run .
 DB_PATH=data/usto.db go run .
 ```
 
-Dev-настройки авторизации:
+JWT-секрет:
 
 ```bash
-DEV_SMS_CODE=1234 JWT_SECRET=change-me go run .
+JWT_SECRET=change-me go run .
+```
+
+Разрешённые CORS-origin (через запятую); без переменной в `APP_ENV=development` сервер
+отражает любой origin (удобно локально), в остальных окружениях без неё — CORS закрыт:
+
+```bash
+ALLOWED_ORIGINS=https://app.example.com,https://admin.example.com go run .
 ```
 
 ## Деплой на Railway
@@ -79,7 +84,7 @@ PORT=8080
 DB_DRIVER=postgres
 DATABASE_URL=<Railway PostgreSQL URL>
 JWT_SECRET=<long-random-secret>
-DEV_SMS_CODE=1234
+ALLOWED_ORIGINS=https://<домен фронтенда>
 ACCESS_TOKEN_HOURS=24
 REFRESH_TOKEN_HOURS=720
 ```
@@ -140,24 +145,32 @@ docker compose down
 docker compose down -v
 ```
 
-Проверка auth API:
+Проверка auth API (без SMS-кода):
 
 ```bash
+# Новый номер без ФИО — сервер просит анкету, аккаунт не создаётся:
 curl -X POST -H 'Content-Type: application/json' \
-  --data '{"phone":"+992900112233"}' \
-  http://localhost:8080/api/auth/request-code
+  --data '{"phone":"+992900112233","role":"customer"}' \
+  http://localhost:8080/api/auth/login
+# => {"registrationRequired":true}
 
+# Тот же новый номер с анкетой — аккаунт создаётся, сразу приходят токены:
 curl -X POST -H 'Content-Type: application/json' \
-  --data '{"phone":"+992900112233","code":"1234","role":"customer"}' \
-  http://localhost:8080/api/auth/verify-code
+  --data '{"phone":"+992900112233","role":"customer","name":"Иван Иванов","city":"Душанбе","district":"Сино"}' \
+  http://localhost:8080/api/auth/login
+
+# Повторный вход тем же номером — сразу токены, анкета не нужна:
+curl -X POST -H 'Content-Type: application/json' \
+  --data '{"phone":"+992900112233","role":"customer"}' \
+  http://localhost:8080/api/auth/login
 ```
 
-Тот же номер с `role=master` (или любой другой новый номер) выдаёт токен мастера — заявки/отклики/кошелёк/верификация ниже требуют токен нужной роли (заявку создаёт `customer`, откликается/пополняет кошелёк/проходит верификацию `master`):
+Тот же приём с `role=master` (или любой другой новый номер) даёт токен мастера — заявку создаёт `customer`, откликается/пополняет кошелёк/проходит верификацию/редактирует карточку в каталоге `master`:
 
 ```bash
 curl -X POST -H 'Content-Type: application/json' \
-  --data '{"phone":"+992918445566","code":"1234","role":"master"}' \
-  http://localhost:8080/api/auth/verify-code
+  --data '{"phone":"+992918445566","role":"master","name":"Шер Назаров","city":"Душанбе","district":"Сино"}' \
+  http://localhost:8080/api/auth/login
 ```
 
 После получения `accessToken`:
@@ -290,13 +303,17 @@ flutter test
 
 Сейчас во Flutter уже подключены:
 
-- вход по телефону и dev SMS-коду;
+- вход по телефону без SMS-кода (номер + роль; анкета ФИО/город/район — только при
+  первом входе нового номера), сессия сохраняется между запусками (refresh-токен в
+  secure storage), реальный выход из аккаунта;
 - главная сводка;
-- список заявок и детали заявки;
+- список заявок и детали заявки, смена статуса заявки (завершить/отменить);
 - создание заявки;
 - просмотр откликов и отправка отклика;
-- список мастеров и профиль мастера;
-- чат и отправка сообщения;
+- список мастеров с поиском и профиль мастера;
+- чат и отправка сообщения (новые сообщения подтягиваются поллингом);
 - кошелек: баланс, транзакции, пополнение;
-- профиль пользователя и редактирование имени/города/района.
+- профиль пользователя и редактирование имени/города/района;
+- для роли master — редактирование своей карточки в каталоге мастеров (имя, услуга,
+  описание, навыки, портфолио);
 - верификация мастера: статус, отправка документа, dev-подтверждение.

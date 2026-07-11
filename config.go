@@ -18,6 +18,8 @@ type Config struct {
 	AccessTokenHours  int
 	RefreshTokenHours int
 	PprofAddr         string
+	AllowedOrigins    []string
+	MediaDir          string
 }
 
 func loadConfig() Config {
@@ -32,6 +34,8 @@ func loadConfig() Config {
 		AccessTokenHours:  envInt("ACCESS_TOKEN_HOURS", 24),
 		RefreshTokenHours: envInt("REFRESH_TOKEN_HOURS", 720),
 		PprofAddr:         env("PPROF_ADDR", ""),
+		AllowedOrigins:    envList("ALLOWED_ORIGINS"),
+		MediaDir:          env("MEDIA_DIR", "./uploads"),
 	}
 }
 
@@ -52,6 +56,22 @@ func env(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+// envList parses a comma-separated env var into a trimmed, non-empty slice.
+// An unset/empty var returns nil, which callers treat as "no explicit list".
+func envList(key string) []string {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return nil
+	}
+	var items []string
+	for _, part := range strings.Split(value, ",") {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			items = append(items, trimmed)
+		}
+	}
+	return items
 }
 
 func envInt(key string, fallback int) int {

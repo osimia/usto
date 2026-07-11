@@ -38,6 +38,47 @@ class ApiClient {
     return _request('PATCH', path, body: body);
   }
 
+  Future<Map<String, dynamic>> postMultipart(
+    String path, {
+    required String fieldName,
+    required String filePath,
+  }) async {
+    final uri = Uri.parse('$baseUrl$path');
+    try {
+      final request = http.MultipartRequest('POST', uri);
+      request.headers['Accept'] = 'application/json';
+      if (accessToken != null) {
+        request.headers['Authorization'] = 'Bearer $accessToken';
+      }
+      request.files.add(await http.MultipartFile.fromPath(fieldName, filePath));
+      final streamed = await request.send().timeout(
+        const Duration(seconds: 30),
+      );
+      final response = await http.Response.fromStream(streamed);
+      return _handleResponse(response);
+    } on http.ClientException {
+      throw ApiException('Не удалось подключиться к API: $baseUrl');
+    } on Exception catch (error) {
+      if (error.toString().contains('TimeoutException')) {
+        throw ApiException(
+          'Сервер отвечает слишком долго. Попробуйте ещё раз.',
+        );
+      }
+      rethrow;
+    }
+  }
+
+  String mediaUrl(String url) {
+    if (url.isEmpty ||
+        url.startsWith('http://') ||
+        url.startsWith('https://')) {
+      return url;
+    }
+    final api = Uri.parse(baseUrl);
+    final origin = api.replace(path: '', query: '', fragment: '').toString();
+    return '${origin.replaceFirst(RegExp(r'/$'), '')}$url';
+  }
+
   Future<Map<String, dynamic>> _request(
     String method,
     String path, {
@@ -63,22 +104,7 @@ class ApiClient {
               .timeout(_timeout),
         _ => throw ApiException('Unsupported method: $method'),
       };
-      final text = response.body;
-      final data = text.isEmpty ? <String, dynamic>{} : _decodeObject(text);
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        final error = data['error'];
-        if (error is Map && error['message'] is String) {
-          throw ApiException(
-            error['message'] as String,
-            statusCode: response.statusCode,
-          );
-        }
-        throw ApiException(
-          'HTTP ${response.statusCode}',
-          statusCode: response.statusCode,
-        );
-      }
-      return data;
+      return _handleResponse(response);
     } on http.ClientException {
       throw ApiException('Не удалось подключиться к API: $baseUrl');
     } on Exception catch (error) {
@@ -89,6 +115,25 @@ class ApiClient {
       }
       rethrow;
     }
+  }
+
+  Map<String, dynamic> _handleResponse(http.Response response) {
+    final text = response.body;
+    final data = text.isEmpty ? <String, dynamic>{} : _decodeObject(text);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final error = data['error'];
+      if (error is Map && error['message'] is String) {
+        throw ApiException(
+          error['message'] as String,
+          statusCode: response.statusCode,
+        );
+      }
+      throw ApiException(
+        'HTTP ${response.statusCode}',
+        statusCode: response.statusCode,
+      );
+    }
+    return data;
   }
 
   Map<String, dynamic> _decodeObject(String text) {

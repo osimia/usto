@@ -58,21 +58,36 @@ type MasterReview struct {
 }
 
 type Order struct {
-	ID                int    `json:"id"`
-	CustomerID        int    `json:"customerId,omitempty"`
-	SelectedMasterID  int    `json:"selectedMasterId,omitempty"`
-	PreferredMasterID int    `json:"preferredMasterId,omitempty"`
-	Title             string `json:"title"`
-	Desc              string `json:"desc"`
-	Category          string `json:"category"`
-	District          string `json:"district"`
-	Address           string `json:"address"`
-	Budget            string `json:"budget"`
-	When              string `json:"when"`
-	Status            string `json:"status"`
-	Views             int    `json:"views"`
-	Responses         int    `json:"responses"`
-	CreatedAt         string `json:"createdAt"`
+	ID                int          `json:"id"`
+	CustomerID        int          `json:"customerId,omitempty"`
+	SelectedMasterID  int          `json:"selectedMasterId,omitempty"`
+	PreferredMasterID int          `json:"preferredMasterId,omitempty"`
+	Title             string       `json:"title"`
+	Desc              string       `json:"desc"`
+	Category          string       `json:"category"`
+	District          string       `json:"district"`
+	Address           string       `json:"address"`
+	Budget            string       `json:"budget"`
+	When              string       `json:"when"`
+	Status            string       `json:"status"`
+	Views             int          `json:"views"`
+	Responses         int          `json:"responses"`
+	CreatedAt         string       `json:"createdAt"`
+	Photos            []OrderPhoto `json:"photos,omitempty"`
+}
+
+type OrderPhoto struct {
+	ID          int    `json:"id"`
+	OrderID     int    `json:"orderId"`
+	ContentHash string `json:"contentHash"`
+	ThumbURL    string `json:"thumbUrl"`
+	MediumURL   string `json:"mediumUrl"`
+	FullURL     string `json:"fullUrl"`
+	Width       int    `json:"width"`
+	Height      int    `json:"height"`
+	Blurhash    string `json:"blurhash,omitempty"`
+	SortOrder   int    `json:"sortOrder"`
+	CreatedAt   string `json:"createdAt"`
 }
 
 type Response struct {
@@ -296,6 +311,9 @@ func migrate(db *sql.DB) error {
 		if err := ensureColumn(db, "transactions", "profile_id", `ALTER TABLE transactions ADD COLUMN profile_id INTEGER REFERENCES profiles(id)`); err != nil {
 			return err
 		}
+		if err := ensureColumn(db, "order_photos", "blurhash", `ALTER TABLE order_photos ADD COLUMN blurhash TEXT NOT NULL DEFAULT ''`); err != nil {
+			return err
+		}
 	} else if activeSQLDriver == "postgres" {
 		if err := ensureColumn(db, "orders", "selected_master_id", `ALTER TABLE orders ADD COLUMN selected_master_id BIGINT REFERENCES masters(id)`); err != nil {
 			return err
@@ -310,6 +328,9 @@ func migrate(db *sql.DB) error {
 			return err
 		}
 		if err := ensureColumn(db, "transactions", "profile_id", `ALTER TABLE transactions ADD COLUMN profile_id BIGINT REFERENCES profiles(id)`); err != nil {
+			return err
+		}
+		if err := ensureColumn(db, "order_photos", "blurhash", `ALTER TABLE order_photos ADD COLUMN blurhash TEXT NOT NULL DEFAULT ''`); err != nil {
 			return err
 		}
 	}
@@ -354,6 +375,12 @@ func sqliteSchema() []string {
 			icon TEXT NOT NULL,
 			theme TEXT NOT NULL
 		);`,
+		`CREATE TABLE IF NOT EXISTS services (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+			name TEXT NOT NULL
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_services_category ON services(category_id);`,
 		`CREATE TABLE IF NOT EXISTS masters (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			profile_id INTEGER REFERENCES profiles(id),
@@ -385,6 +412,20 @@ func sqliteSchema() []string {
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_orders_feed ON orders(district, created_at DESC);`,
+		`CREATE TABLE IF NOT EXISTS order_photos (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+			content_hash TEXT NOT NULL,
+			thumb_path TEXT NOT NULL,
+			medium_path TEXT NOT NULL,
+			full_path TEXT NOT NULL,
+			width INTEGER NOT NULL,
+			height INTEGER NOT NULL,
+			blurhash TEXT NOT NULL DEFAULT '',
+			sort_order INTEGER NOT NULL DEFAULT 0,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_order_photos_order ON order_photos(order_id, sort_order, id);`,
 		`CREATE TABLE IF NOT EXISTS responses (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
@@ -473,6 +514,12 @@ func postgresSchema() []string {
 			icon TEXT NOT NULL,
 			theme TEXT NOT NULL
 		);`,
+		`CREATE TABLE IF NOT EXISTS services (
+			id BIGSERIAL PRIMARY KEY,
+			category_id BIGINT NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+			name TEXT NOT NULL
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_services_category ON services(category_id);`,
 		`CREATE TABLE IF NOT EXISTS masters (
 			id BIGSERIAL PRIMARY KEY,
 			profile_id BIGINT REFERENCES profiles(id),
@@ -504,6 +551,20 @@ func postgresSchema() []string {
 			created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_orders_feed ON orders(district, created_at DESC);`,
+		`CREATE TABLE IF NOT EXISTS order_photos (
+			id BIGSERIAL PRIMARY KEY,
+			order_id BIGINT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+			content_hash TEXT NOT NULL,
+			thumb_path TEXT NOT NULL,
+			medium_path TEXT NOT NULL,
+			full_path TEXT NOT NULL,
+			width INTEGER NOT NULL,
+			height INTEGER NOT NULL,
+			blurhash TEXT NOT NULL DEFAULT '',
+			sort_order INTEGER NOT NULL DEFAULT 0,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_order_photos_order ON order_photos(order_id, sort_order, id);`,
 		`CREATE TABLE IF NOT EXISTS responses (
 			id BIGSERIAL PRIMARY KEY,
 			order_id BIGINT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
@@ -645,6 +706,22 @@ func seed(db *sql.DB) error {
 	}
 	for _, c := range categories {
 		mustExec(`INSERT INTO categories(name,icon,theme) VALUES(?,?,?)`, c.Name, c.Icon, c.Theme)
+	}
+
+	servicesByCategory := map[string][]string{
+		"Сантехника":   {"Краны", "Трубы", "Бойлеры", "Засоры"},
+		"Электрика":    {"Розетки", "Проводка", "Освещение", "Щитки"},
+		"Ремонт":       {"Плитка", "Покраска", "Штукатурка", "Косметический ремонт"},
+		"Мебель":       {"Сборка", "Ремонт", "Установка", "Разборка"},
+		"Уборка":       {"Квартира", "Офис", "После ремонта", "Генеральная"},
+		"Грузчики":     {"Переезд", "Погрузка/разгрузка", "Вынос мусора", "Такелаж"},
+		"Кондиционеры": {"Установка", "Обслуживание", "Ремонт", "Чистка"},
+		"Техника":      {"Ремонт техники", "Настройка", "Установка", "Диагностика"},
+	}
+	for _, c := range categories {
+		for _, service := range servicesByCategory[c.Name] {
+			mustExec(`INSERT INTO services(category_id,name) VALUES((SELECT id FROM categories WHERE name=?),?)`, c.Name, service)
+		}
 	}
 
 	masters := []Master{
@@ -928,7 +1005,61 @@ func orderByIDFrom(q queryer, id int) (Order, bool) {
 		o.PreferredMasterID = int(preferredMasterID.Int64)
 	}
 	o.CreatedAt = relativeTime(created)
+	o.Photos = orderPhotosFor(q, []int{o.ID})[o.ID]
 	return o, true
+}
+
+func orderPhotosFor(q queryer, orderIDs []int) map[int][]OrderPhoto {
+	result := make(map[int][]OrderPhoto, len(orderIDs))
+	if len(orderIDs) == 0 {
+		return result
+	}
+	placeholders := make([]string, 0, len(orderIDs))
+	args := make([]any, 0, len(orderIDs))
+	for _, id := range orderIDs {
+		if id <= 0 {
+			continue
+		}
+		placeholders = append(placeholders, "?")
+		args = append(args, id)
+	}
+	if len(args) == 0 {
+		return result
+	}
+	query := `SELECT id,order_id,content_hash,thumb_path,medium_path,full_path,width,height,blurhash,sort_order,created_at
+		FROM order_photos WHERE order_id IN (` + strings.Join(placeholders, ",") + `)
+		ORDER BY order_id,sort_order,id`
+	rows, err := q.Query(sqlf(query), args...)
+	if err != nil {
+		return result
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var item OrderPhoto
+		var thumbPath, mediumPath, fullPath, created string
+		if rows.Scan(&item.ID, &item.OrderID, &item.ContentHash, &thumbPath, &mediumPath, &fullPath, &item.Width, &item.Height, &item.Blurhash, &item.SortOrder, &created) == nil {
+			item.ThumbURL = mediaURL(thumbPath)
+			item.MediumURL = mediaURL(mediumPath)
+			item.FullURL = mediaURL(fullPath)
+			item.CreatedAt = relativeTime(created)
+			result[item.OrderID] = append(result[item.OrderID], item)
+		}
+	}
+	return result
+}
+
+func attachPhotosToOrders(orders []Order, photos map[int][]OrderPhoto) {
+	for i := range orders {
+		orders[i].Photos = photos[orders[i].ID]
+	}
+}
+
+func mediaURL(path string) string {
+	clean := strings.TrimLeft(filepath.ToSlash(strings.TrimSpace(path)), "/")
+	if clean == "" {
+		return ""
+	}
+	return "/media/" + clean
 }
 
 func (a *App) responsesForOrder(orderID int) []Response {
@@ -955,6 +1086,27 @@ func (a *App) responsesForOrder(orderID int) []Response {
 
 func (a *App) messagesForChat(chatID int) []Message {
 	rows, err := a.db.Query(sqlf(`SELECT id,chat_id,from_role,text,created_at FROM messages WHERE chat_id=? ORDER BY created_at,id`), chatID)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var items []Message
+	for rows.Next() {
+		var item Message
+		var created string
+		if rows.Scan(&item.ID, &item.ChatID, &item.FromRole, &item.Text, &created) == nil {
+			item.CreatedAt = clock(created)
+			items = append(items, item)
+		}
+	}
+	return items
+}
+
+// messagesForChatSince supports polling: only messages newer than sinceID,
+// so a client can merge them into what it already has instead of re-fetching
+// (and re-rendering) the whole history on every poll tick.
+func (a *App) messagesForChatSince(chatID, sinceID int) []Message {
+	rows, err := a.db.Query(sqlf(`SELECT id,chat_id,from_role,text,created_at FROM messages WHERE chat_id=? AND id>? ORDER BY created_at,id`), chatID, sinceID)
 	if err != nil {
 		return nil
 	}
@@ -1052,6 +1204,19 @@ func splitList(v string) []string {
 		return nil
 	}
 	return strings.Split(v, ",")
+}
+
+// joinList is splitList's inverse for writes: trims each item and drops
+// empties before joining, so repeated saves (e.g. a master re-submitting
+// their skills list) can't accumulate blank entries or stray commas.
+func joinList(items []string) string {
+	cleaned := make([]string, 0, len(items))
+	for _, item := range items {
+		if trimmed := strings.TrimSpace(item); trimmed != "" {
+			cleaned = append(cleaned, trimmed)
+		}
+	}
+	return strings.Join(cleaned, ",")
 }
 
 func relativeTime(value string) string {

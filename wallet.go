@@ -88,11 +88,7 @@ func (a *App) topUpWallet(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, err)
 		return
 	}
-	if r.URL.Query().Get("wrap") == "1" {
-		writeJSON(w, WalletResponse{Wallet: wallet})
-		return
-	}
-	writeJSON(w, a.snapshot())
+	writeJSON(w, WalletResponse{Wallet: wallet})
 }
 
 func (a *App) wallet(profileID int) (Wallet, error) {

@@ -104,12 +104,8 @@ func (a *App) verifyMaster(w http.ResponseWriter, r *http.Request) {
 		serverError(w, err)
 		return
 	}
-	if r.URL.Query().Get("wrap") == "1" {
-		master.IsVerified = true
-		writeJSON(w, a.verificationStatus(master))
-		return
-	}
-	writeJSON(w, a.snapshot())
+	master.IsVerified = true
+	writeJSON(w, a.verificationStatus(master))
 }
 
 func (a *App) verificationStatus(master Profile) VerificationStatusResponse {

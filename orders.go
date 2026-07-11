@@ -92,6 +92,14 @@ func (a *App) orderDetailHandler(w http.ResponseWriter, r *http.Request) {
 		a.orderSelectMasterHandler(w, r, id)
 		return
 	}
+	if action == "status" {
+		a.orderStatusHandler(w, r, id)
+		return
+	}
+	if action == "photos" {
+		a.orderPhotoUploadHandler(w, r, id)
+		return
+	}
 	if action != "" {
 		writeError(w, http.StatusNotFound, "route_not_found", "route not found")
 		return
@@ -138,6 +146,80 @@ func (a *App) orderSelectMasterHandler(w http.ResponseWriter, r *http.Request, o
 		Responses: a.responsesForOrder(orderID),
 		Chat:      chat,
 	})
+}
+
+type UpdateOrderStatusRequest struct {
+	Status string `json:"status"`
+}
+
+// orderStatusHandler lets the order's own customer mark it completed or
+// cancelled. Only the owning customer may do this — an order with no
+// customer_id (created before this column existed, or via the legacy
+// unauthenticated path) has no owner to authorize, so it's rejected too.
+func (a *App) orderStatusHandler(w http.ResponseWriter, r *http.Request, orderID int) {
+	if !method(w, r, http.MethodPatch) {
+		return
+	}
+	_, profile, ok := a.currentUserProfile(w, r)
+	if !ok {
+		return
+	}
+	order, ok := a.orderByID(orderID)
+	if !ok {
+		writeError(w, http.StatusNotFound, "order_not_found", "order not found")
+		return
+	}
+	if order.CustomerID == 0 || order.CustomerID != profile.ID {
+		writeError(w, http.StatusForbidden, "forbidden", "only the order's own customer can change its status")
+		return
+	}
+	var req UpdateOrderStatusRequest
+	if err := decode(r, &req); err != nil {
+		badRequest(w, err)
+		return
+	}
+	updated, err := a.updateOrderStatus(order, strings.TrimSpace(req.Status))
+	if err != nil {
+		badRequest(w, err)
+		return
+	}
+	writeJSON(w, OrderResponse{Order: updated, Responses: a.responsesForOrder(orderID)})
+}
+
+// updateOrderStatus applies a customer-facing status transition. "completed"
+// requires a master to already be selected (you can't complete a job with no
+// one assigned); "cancelled" is allowed from any non-final state. Completing
+// an order also credits the selected master's completed_jobs counter, which
+// otherwise never moves off its seed value.
+func (a *App) updateOrderStatus(order Order, action string) (Order, error) {
+	var newStatus string
+	switch action {
+	case "completed":
+		if order.SelectedMasterID == 0 {
+			return Order{}, errors.New("order must have a selected master before it can be completed")
+		}
+		newStatus = "Завершена"
+	case "cancelled":
+		if order.Status == "Завершена" || order.Status == "Отменена" {
+			return Order{}, errors.New("order is already in a final state")
+		}
+		newStatus = "Отменена"
+	default:
+		return Order{}, errors.New("status must be 'completed' or 'cancelled'")
+	}
+	if _, err := a.db.Exec(sqlf(`UPDATE orders SET status=? WHERE id=?`), newStatus, order.ID); err != nil {
+		return Order{}, err
+	}
+	if newStatus == "Завершена" {
+		if profileID, ok := a.profileIDForMaster(order.SelectedMasterID); ok {
+			_, _ = a.db.Exec(sqlf(`UPDATE profiles SET completed_jobs = completed_jobs + 1 WHERE id=?`), profileID)
+		}
+	}
+	updated, ok := a.orderByID(order.ID)
+	if !ok {
+		return Order{}, errors.New("updated order not found")
+	}
+	return updated, nil
 }
 
 func parseOrderSubroute(path string) (int, string, bool) {
@@ -301,6 +383,7 @@ func (a *App) queryOrders(filters OrderFilters) []Order {
 	}
 	defer rows.Close()
 	var items []Order
+	var orderIDs []int
 	for rows.Next() {
 		var o Order
 		var customerID sql.NullInt64
@@ -319,8 +402,10 @@ func (a *App) queryOrders(filters OrderFilters) []Order {
 			}
 			o.CreatedAt = relativeTime(created)
 			items = append(items, o)
+			orderIDs = append(orderIDs, o.ID)
 		}
 	}
+	attachPhotosToOrders(items, orderPhotosFor(a.db, orderIDs))
 	if filters.Query == "" {
 		return items
 	}

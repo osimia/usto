@@ -44,6 +44,11 @@ func (a *App) chatDetailHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
+		since, _ := strconv.Atoi(r.URL.Query().Get("since"))
+		if since > 0 {
+			writeJSON(w, MessagesResponse{Messages: a.messagesForChatSince(chatID, since)})
+			return
+		}
 		writeJSON(w, MessagesResponse{Messages: a.messagesForChat(chatID)})
 	case http.MethodPost:
 		var req SendMessageRequest
@@ -57,34 +62,6 @@ func (a *App) chatDetailHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, SendMessageResponse{Message: message})
-	default:
-		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
-	}
-}
-
-func (a *App) messages(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		writeJSON(w, a.messagesForChat(1))
-	case http.MethodPost:
-		var req SendMessageRequest
-		if err := decode(r, &req); err != nil {
-			badRequest(w, err)
-			return
-		}
-		message, err := a.createMessage(1, req)
-		if err != nil {
-			badRequest(w, err)
-			return
-		}
-		if r.URL.Query().Get("wrap") == "1" {
-			writeJSON(w, SendMessageResponse{
-				Message:  message,
-				Messages: a.messagesForChat(1),
-			})
-			return
-		}
-		writeJSON(w, a.messagesForChat(1))
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
 	}
